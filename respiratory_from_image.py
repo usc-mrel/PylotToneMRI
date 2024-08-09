@@ -3,27 +3,11 @@ import ismrmrd
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 import numpy as np
-import tkinter as tk
 import numpy.typing as npt
 from pilottone import qint
 from scipy.signal import find_peaks
 from scipy.ndimage import median_filter
-
-def selection_ui(dsetNames: list[str]) -> str:
-    root = tk.Tk()
-    var = tk.IntVar()
-    root.title("Select a group from the dataset.")
-    lb = tk.Listbox(root, selectmode=tk.SINGLE, height = len(dsetNames), width = 50) # create Listbox
-    for x in dsetNames: lb.insert(tk.END, x)
-    lb.pack() # put listbox on window
-    lb.select_set(len(dsetNames)-1)
-    btn = tk.Button(root,text="Select Group",command=lambda: var.set(1))
-    btn.pack()
-    # root.mainloop()
-    btn.wait_variable(var)
-    group = lb.get(lb.curselection()[0])
-    root.destroy()
-    return group
+from ui.selectionui import get_selection
 
 def extract_nav_from_profile(line_profile, ):
     n_time = line_profile.shape[1]
@@ -69,6 +53,7 @@ def get_line_profile(imgs: npt.NDArray[np.float32]) -> npt.NDArray[np.float32]:
 
     import hyperspy.api as hs
     
+    # TODO: extract from the dataset.
     s = hs.signals.Signal2D(imgs)
     s.axes_manager[0].name = 'Time'
     s.axes_manager[0].unit = 'ms'
@@ -106,22 +91,21 @@ if __name__ == '__main__':
     # If run multiple times, the recon.mrd file will have multiple reconstructed images
     # Find the most recent recon run
     with h5py.File(outfilename, 'r') as d:
-        dsetNames = list(d.keys())
-        print('File %s contains %d groups (reconstruction runs):' % (outfilename, len(dsetNames)))
-        print(' ', '\n  '.join(dsetNames))
+        dset_names = list(d.keys())
+        print(f'File {outfilename} contains {len(dset_names)} groups (reconstruction runs):')
+        print(' ', '\n  '.join(dset_names))
 
-    group = selection_ui(dsetNames)
-
+    group = get_selection(dset_names)
 
     dset = ismrmrd.Dataset(outfilename, group, False)
     subgroups = dset.list()
 
     # Images are organized by series number in subgroups that start with 'images_'
     imgGroups = [group for group in list(subgroups) if (group.find('image_') != -1)]
-    print('Group %s contains %d image series:' % (group, len(imgGroups)))
+    print(f'Group {group} contains {len(imgGroups)} image series:')
     print(' ', '\n  '.join(imgGroups))
 
-    mpl.use('QtAgg')
+    mpl.use('Qt5Agg')
     # Show images
     # fig, axs = plt.subplots(1, len(imgGroups), squeeze=False)
     imgs = []
