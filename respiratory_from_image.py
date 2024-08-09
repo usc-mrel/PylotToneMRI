@@ -8,6 +8,7 @@ from pilottone import qint
 from scipy.signal import find_peaks
 from scipy.ndimage import median_filter
 from ui.selectionui import get_selection
+import hyperspy.api as hs
 
 def extract_nav_from_profile(line_profile, ):
     n_time = line_profile.shape[1]
@@ -43,28 +44,32 @@ def extract_nav_from_profile(line_profile, ):
     nav = median_filter(np.max(nav) - nav, size=(3,), axes=(0,))
     return nav
 
-def get_line_profile(imgs: npt.NDArray[np.float32]) -> npt.NDArray[np.float32]:
+def get_line_profile(imgs: npt.NDArray[np.float32], 
+                     resolution: npt.ArrayLike=[1.0, 1.0],
+                     timestep: float = 1.0) -> npt.NDArray[np.float32]:
+    
     ff, ax = plt.subplots()
+
     def profile_changed(obj):
         ax.clear()
         ax.imshow(obj.data.T, cmap='gray')
         ax.set_axis_off()
         ff.canvas.draw()
 
-    import hyperspy.api as hs
     
     # TODO: extract from the dataset.
     s = hs.signals.Signal2D(imgs)
     s.axes_manager[0].name = 'Time'
     s.axes_manager[0].unit = 'ms'
-    s.axes_manager[0].scale = 5.5
+    s.axes_manager[0].scale = timestep
     s.axes_manager[1].name = 'x'
     s.axes_manager[1].unit = 'mm'
+    s.axes_manager[1].scale = resolution[0]
     s.axes_manager[2].name = 'y'
     s.axes_manager[2].unit = 'mm'
+    s.axes_manager[2].scale = resolution[1]
 
-    print(s)
-    s.calibrate(x0=1, y0=1, x1=2, y1=2, new_length=1.87, units="mm", interactive=False)
+    # s.calibrate(x0=1, y0=1, x1=2, y1=2, new_length=1.87, units="mm", interactive=False)
     line_roi = hs.roi.Line2DROI(x1=100, y1=100, x2=100, y2=120, linewidth=4)
     s.plot(navigator='spectrum', colorbar=False, axes_ticks=False)
     # hs.plot.plot_images(s)
@@ -105,18 +110,24 @@ if __name__ == '__main__':
     print(f'Group {group} contains {len(imgGroups)} image series:')
     print(' ', '\n  '.join(imgGroups))
 
-    mpl.use('Qt5Agg')
-    # Show images
-    # fig, axs = plt.subplots(1, len(imgGroups), squeeze=False)
+    # Read and append images
     imgs = []
+    time_frame = []
     n = dset.number_of_images(imgGroups[0])
     for ii in range(n):
-        imgs.append(np.squeeze(dset.read_image(imgGroups[0], ii).data))
-    
+        frame = dset.read_image(imgGroups[0], ii)
+        imgs.append(np.squeeze(frame.data))
+        time_frame.append(frame.acquisition_time_stamp)
+    img_0 = dset.read_image(imgGroups[0], 0)
     dset.close()
 
+    time_frame = np.array(time_frame, dtype=float)*2.5e-3
+    time_frame -= time_frame[0]
     imgs = np.flip(np.asarray(imgs), axis=2).transpose((0, 2, 1))
-    line_profile = get_line_profile(imgs)
+    resolution = img_0.field_of_view[0:2]/np.array(img_0.matrix_size[1:])
+
+    mpl.use('Qt5Agg')
+    line_profile = get_line_profile(imgs, resolution, time_frame[1] - time_frame[0])
    
     nav = extract_nav_from_profile(line_profile)
     plt.figure()
