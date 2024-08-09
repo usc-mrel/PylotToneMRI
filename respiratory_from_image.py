@@ -57,7 +57,7 @@ def get_line_profile(imgs: npt.NDArray[np.float32],
         ff.canvas.draw()
 
     
-    # TODO: extract from the dataset.
+    # Fill the spatial and temporal scales
     s = hs.signals.Signal2D(imgs)
     s.axes_manager[0].name = 'Time'
     s.axes_manager[0].unit = 'ms'
@@ -131,7 +131,7 @@ if __name__ == '__main__':
    
     nav = extract_nav_from_profile(line_profile)
     plt.figure()
-    plt.plot(nav)
+    plt.plot(time_frame, nav)
     plt.title('Extracted navigator.')
     plt.show()
     np.save('output_recons/vol0902_20240611/respnav_meas_MID00175_FID15580_pulseq2D_fire_spiralga_400mV_24MHz_editer', nav)
