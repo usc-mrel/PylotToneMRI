@@ -2,45 +2,9 @@
 output_filename = "vol0622_pilottone"
 
 data_folder     = "vol0622_20230522"
-raw_file        = "meas_MID00067_FID65434_BEAT_Interactive_pitone_30V"
-hdr_file        = "meas_MID00050_FID03279_RTHawk_coils2" # This is a Siemens hdr for RTHawk scan. Will be ignored if the raw file is a Siemens file.
+raw_file        = "67"
 DATA_ROOT       = '/mnt/LIN_DATA/MRI_DATA'
-ecg_filename    = 'beat_snif_30v.ecg'
-resp_filename   = '091123_ecg.resp'
-
-metafile_path   = 'input_data'
-
-use_ecg         = true
-use_resp        = true
-
-# Save control
-fw_separation   = true # save for FW toolbox
-save_data       = false
 
 # Reconstruction control
-z_rec           = [] #1:40 # slices to reconstruct
-
 recon_type      = "viewsharing" # 'viewsharing', 'ttv', 'xdgrasp'
-coilmap_data    = "self" # 'self', 'measured'
-csm_method      = "nlinv" # "ecalib", "walsh", "nlinv"
-cc_method       = "rovir"    # "svd", "rovir"
-coil_comp       = 12 # 0 for no compression, no of coils to reduce otherwise
-whitening       = true
-maxwell_corr_ax = true
-apply_girf      = true
 
-dbg_coil_energy = true # Show coil energy plot after cc and manually pick no of coils
-
-# PICS params
-lambda_llr = 0.0001
-lambda_t   = 0.1
-lambda_s   = 0
-iter_num   = 200
-use_gpu    = true
-gpu_num    = 1
-
-# Bart environment variables
-[bartcfg]
-TOOLBOX_PATH = '/server/home/btasdelen/bart'
-OPENBLAS_NUM_THREADS = '4'
-OMP_NUM_THREADS = '4'
