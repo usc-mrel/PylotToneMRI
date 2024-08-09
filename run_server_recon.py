@@ -1,11 +1,9 @@
-# %% [markdown]
+# %%
 # # Setup the reconstruction
 
-# %%
 import rtoml
 import os
 import fnmatch
-import sys
 
 # Read config
 with open('config.toml', 'r') as cf:
@@ -17,8 +15,7 @@ raw_file    = cfg['raw_file']
 recon_method    = cfg['reconstruction']['recon_type']
 server_port     = cfg['reconstruction']['server_port']
 show_images     = cfg['reconstruction']['show_images']
-
-sys.path.append(f'src/')
+output_folder   = cfg['reconstruction']['output_folder']
 
 data_dir_path = os.path.join(DATA_ROOT, DATA_DIR, 'raw/h5_proc')
 if raw_file.isnumeric():
@@ -53,8 +50,8 @@ from types import SimpleNamespace
 import datetime
 from pathlib import Path
 
-Path(f'output_recons/{DATA_DIR}').mkdir(exist_ok=True, parents=True)
-outfilename = f'output_recons/{DATA_DIR}/{recon_method}_{raw_file_[:-3]}.mrd'
+Path(output_folder, {DATA_DIR}).mkdir(exist_ok=True, parents=True)
+outfilename = os.path.join(output_folder, {DATA_DIR}, f'{recon_method}_{raw_file_[:-3]}.mrd')
 
 # Specify client arguments for recon
 args = SimpleNamespace(**client.defaults)
@@ -67,6 +64,7 @@ args.send_waveforms = True
 
 client.main(args)
 
+# %%
 if show_images:
     import h5py
     import ismrmrd
@@ -115,46 +113,5 @@ if show_images:
     s.axes_manager[2].scale = resolution[1]
     s.plot(navigator='spectrum', colorbar=False, axes_ticks=False)
     plt.show()
-
-
-# %% [markdown]
-# # Display the reconstructed images
-
-# %%
-# Display the reconstructed images
-
-
-# # If run multiple times, the recon.mrd file will have multiple reconstructed images
-# # Find the most recent recon run
-# with h5py.File(outfilename, 'r') as d:
-#     dsetNames = d.keys()
-#     print('File %s contains %d groups (reconstruction runs):' % (outfilename, len(dsetNames)))
-#     print(' ', '\n  '.join(dsetNames))
-#     group = list(dsetNames)[-1]
-
-# dset = ismrmrd.Dataset(outfilename, group, False)
-# subgroups = dset.list()
-
-# # Images are organized by series number in subgroups that start with 'images_'
-# imgGroups = [group for group in list(subgroups) if (group.find('image_') != -1)]
-# print('Group %s contains %d image series:' % (group, len(imgGroups)))
-# print(' ', '\n  '.join(imgGroups))
-
-# # Show images
-# fig, axs = plt.subplots(1, len(imgGroups), squeeze=False)
-
-# for i, series in enumerate(imgGroups):
-#     n = dset.number_of_images(series)
-#     img = dset.read_image(series, 4)
-#     axs[0][i].imshow(np.squeeze(img.data), cmap='gray')
-#     axs[0][i].set_title(series + ' (1/' + str(n) + ')')
-#     axs[0][i].axis('off')
-#     axs[0][i].set_aspect('equal')
-
-# # Adjust layout to prevent clipping of titles
-# plt.tight_layout()
-
-plt.show()
-dset.close()
 
 
