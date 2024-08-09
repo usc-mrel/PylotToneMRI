@@ -4,19 +4,19 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - python
+  - python=3.10.13
   - ismrmrd::ismrmrd-python=1.14.1
-  - ismrmrd::siemens_to_ismrmrd=1.2.11
-  - boost=1.76.0         # For ismrmrd
-  - libxml2=2.9.12       # For ismrmrd
+  - ismrmrd::siemens_to_ismrmrd=1.2.12
+  - boost=1.80.0         # For ismrmrd
+  - libxml2=2.10.3       # For ismrmrd
   - h5py=3.7.0           # For ismrmrd
   - matplotlib=3.8.4     # used by rgb.py and provides various visualization tools including colormaps
-  - numpy=1.26.0
-  - git=2.30.2
+  - numpy=1.26.4
+  - pyside2=5.15.5       # For UI in respiratory_from_image.py
+  - git
   - ipykernel
   - pandas
   - pyfftw
   - hyperspy
+  - rtoml
   - pip
-  - pip:
-    - rtoml==0.10.0
