@@ -1,4 +1,4 @@
-from PySide2.QtWidgets import QApplication, QWidget, QVBoxLayout, QListWidget, QPushButton
+from PySide2.QtWidgets import QApplication, QWidget, QVBoxLayout, QListWidget, QPushButton, QFileDialog
 import sys
 
 def selection_ui(dsetNames: list[str]) -> str:
@@ -62,3 +62,12 @@ def get_selection(selection_list: list[str]):
     window.show()
     app.exec_()
     return window.selected_item
+
+def get_filepath():
+    '''QT based file selection UI.'''
+    app = QApplication(sys.argv)
+    options = QFileDialog.Options()
+    options |= QFileDialog.ReadOnly
+    file_path, _ = QFileDialog.getOpenFileName(None, "Select an MRD image file", "", "MRD Files (*.mrd *.h5);;All Files (*)", options=options)
+
+    return file_path
