@@ -8,7 +8,6 @@ from pilottone import qint
 from scipy.signal import find_peaks
 from scipy.ndimage import median_filter
 from ui.selectionui import get_selection, get_filepath
-from ui import filedialog
 import hyperspy.api as hs
 
 def extract_nav_from_profile(line_profile, ):

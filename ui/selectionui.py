@@ -61,6 +61,7 @@ def get_selection(selection_list: list[str]):
     window = SelectionWindow(selection_list)
     window.show()
     app.exec_()
+    app.shutdown()
     return window.selected_item
 
 def get_filepath():
@@ -69,5 +70,5 @@ def get_filepath():
     options = QFileDialog.Options()
     options |= QFileDialog.ReadOnly
     file_path, _ = QFileDialog.getOpenFileName(None, "Select an MRD image file", "", "MRD Files (*.mrd *.h5);;All Files (*)", options=options)
-
+    app.shutdown()
     return file_path
