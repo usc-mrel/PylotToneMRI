@@ -1,8 +1,9 @@
-from numpy.fft import ifft, ifftshift, fft, fftshift
+from numpy.fft import ifft, fft
 from scipy.signal.windows import tukey
 from scipy.linalg import lstsq
 from scipy.signal import find_peaks, peak_widths
 from scipy.sparse.linalg import svds
+from .signal import apply_filter_freq, designbp_tukeyfilt_freq, designlp_tukeyfilt_freq, qint
 from sobi import sobi
 import numpy as np
 import numpy.typing as npt
@@ -10,6 +11,7 @@ import pyfftw
 import math
 import matplotlib.pyplot as plt
 import re
+import time
 
 def calc_fovshift_phase(kx, ky, acq):
     gbar = 42.576e6
@@ -57,22 +59,12 @@ def est_dtft(t, data, deltaf, window):
 
     return (clean, x_fit)
 
-def to_hybrid_kspace(indata):
-    return ifftshift(ifft(indata, None, axis=0), axes=0)
-
-
-def qint(ym1, y0, yp1):
-    p = (yp1 - ym1) / (2 * (2 * y0 - yp1 - ym1))
-    y = y0 - 0.25 * (ym1 - yp1) * p
-    a = 0.5 * (ym1 - 2 * y0 + yp1)
-    return p, y, a
 
 def find_freq_qifft(data, df, f_center, f_radius, os, ave_dim):
     Nsamp = data.shape[0]
     dfint = df / os
     data = pyfftw.byte_align(data.transpose(2,1,0))
 
-    import time
     start_time = time.time()
     fft = pyfftw.builders.ifft(data, n=Nsamp*os, axis=2, threads=64, planner_effort='FFTW_ESTIMATE')
     data_f = np.fft.ifftshift(fft(), axes=2)
@@ -160,48 +152,6 @@ def plot_multich_comparison(tt: npt.NDArray[np.float64], sigs: tuple[npt.NDArray
         axs[-1, -1].remove()
 
 
-
-def cifft(data, axis):
-    return ifftshift(ifft(fftshift(data, axis), None, axis), axis)
-
-def cfft(data, axis):
-    return fftshift(fft(ifftshift(data, axis), None, axis), axis)
-
-def designlp_tukeyfilt_freq(Fstop, Fs, Ns):
-    Ns = 2*Ns
-    df = Fs/Ns
-    n_pass = 2*round(Fstop/df)+1
-    twin = tukey(n_pass, 0.3)
-    return np.vstack((np.zeros((int((Ns+1-n_pass)/2),1)), twin[:,None], np.zeros((int((Ns-1-n_pass)/2),1))))
-
-def designbp_tukeyfilt_freq(Fstop1, Fstop2, Fs, Ns):
-    filtlp1 = designlp_tukeyfilt_freq(Fstop1, Fs, Ns)
-    filtlp2 = designlp_tukeyfilt_freq(Fstop2, Fs, Ns)
-    return filtlp2 - filtlp1
-
-def apply_filter_freq(sig, flt, pad_method: str):
-    N = sig.shape[0]
-    
-    if pad_method == 'negflip':
-        R = 0.1  # 10% of signal
-        Nr = 800
-        NR = min(round(N * R), Nr)  # At most 50 points
-        x1 = 2 * sig[0, :] - np.flipud(sig[1:NR+1, :])  # maintain continuity in level and slope
-        x2 = 2 * sig[-1, :] - np.flipud(sig[-NR-1:-1, :])
-        sig_padded = np.vstack([x1, sig, x2])
-        sig_filt = np.real(cifft(cfft(np.pad(sig_padded, ((N//2-NR, 0), (0, 0)), mode='constant'), axis=0) * flt[:, np.newaxis], axis=0))
-
-    elif pad_method == 'symmetric':
-        sig_padded = np.pad(sig, ((N//2, N//2), (0, 0)), mode='symmetric')
-        if N % 2 != 0:
-            sig_padded = np.pad(sig_padded, ((0, 1), (0, 0)), mode='constant')
-        sig_filt = np.real(cifft(cfft(sig_padded, axis=0) * flt, axis=0))
-
-    sig_filt = sig_filt[N//2:(N//2 + N), :]
-    
-    return sig_filt
-
-
 def pickcoilsbycorr(insig, start_ch, corr_th):
     Nch = insig.shape[1]
     C = np.corrcoef(insig, rowvar=False)
@@ -256,7 +206,10 @@ def extract_pilottone_navs(pt_sig, f_samp: float, params: dict):
     df = f_samp/n_pt_samp/2
     f_filt = np.arange(0, f_samp, df) - (f_samp - (n_pt_samp % 2)*df)/2 # Handles both even and odd length signals.
 
-    filt_bp_resp = designbp_tukeyfilt_freq(params['respiratory']['freq_start'], params['respiratory']['freq_stop'], f_samp, n_pt_samp)
+    if params['respiratory']['freq_start'] is None:
+        filt_bp_resp = designlp_tukeyfilt_freq(params['respiratory']['freq_stop'], f_samp, n_pt_samp)
+    else:
+        filt_bp_resp = designbp_tukeyfilt_freq(params['respiratory']['freq_start'], params['respiratory']['freq_stop'], f_samp, n_pt_samp)
 
     pt_respiratory_freqs = apply_filter_freq(pt_denoised, filt_bp_resp, 'symmetric')
 
