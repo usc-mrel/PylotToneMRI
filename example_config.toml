@@ -11,3 +11,12 @@ recon_type      = "viewsharing" # 'viewsharing', 'ttv', 'xdgrasp'
 server_port     = 9028  # Port that server is currently running on.
 show_images     = true  # Whether or not to show images after reconstruction.
 output_folder   = "output_recons"
+
+# EDITER control
+[editer]
+prewhiten = true
+autosniffer_select = true
+
+[saving]
+remove_os = true # Remove 2x oversampling when saving the raw data
+save_model_subtracted = true # Whether or not to save PT model subtracted data in main_pilottone_extract script.

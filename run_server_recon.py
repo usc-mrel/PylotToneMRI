@@ -1,9 +1,15 @@
 # %%
 # # Setup the reconstruction
 
-import rtoml
-import os
+import datetime
 import fnmatch
+import os
+from pathlib import Path
+from types import SimpleNamespace
+
+import rtoml
+
+from reconstruction import client
 
 # Read config
 with open('config.toml', 'r') as cf:
@@ -19,7 +25,7 @@ output_folder   = cfg['reconstruction']['output_folder']
 
 data_dir_path = os.path.join(DATA_ROOT, DATA_DIR, 'raw/h5_proc')
 if raw_file.isnumeric():
-    raw_file_ = fnmatch.filter(os.listdir(data_dir_path), f'meas_MID*{raw_file}*.h5')[0]
+    raw_file_ = fnmatch.filter(os.listdir(data_dir_path), f'meas_MID*{raw_file}*_editer.h5')[0]
     ismrmrd_data_fullpath = os.path.join(data_dir_path, raw_file_)
 elif raw_file.startswith('meas_MID'):
     raw_file_ = raw_file
@@ -45,13 +51,9 @@ recon_config = {'viewsharing': 'simplenufft1arm',
 
 # %%
 # Run reconstruction
-from reconstruction import client
-from types import SimpleNamespace
-import datetime
-from pathlib import Path
 
-Path(output_folder, {DATA_DIR}).mkdir(exist_ok=True, parents=True)
-outfilename = os.path.join(output_folder, {DATA_DIR}, f'{recon_method}_{raw_file_[:-3]}.mrd')
+Path(output_folder, DATA_DIR).mkdir(exist_ok=True, parents=True)
+outfilename = os.path.join(output_folder, DATA_DIR, f'{recon_method}_{raw_file_[:-3]}.mrd')
 
 # Specify client arguments for recon
 args = SimpleNamespace(**client.defaults)
@@ -59,6 +61,7 @@ args.out_group = f"{recon_method}_{str(datetime.datetime.now())}"
 args.config   = recon_config[recon_method]  # Recon module to be used
 args.outfile  = outfilename
 args.filename = ismrmrd_data_fullpath
+# args.address = '10.136.17.174'
 args.port = server_port
 args.send_waveforms = True
 
@@ -67,10 +70,10 @@ client.main(args)
 # %%
 if show_images:
     import h5py
+    import hyperspy.api as hs
     import ismrmrd
     import matplotlib.pyplot as plt
     import numpy as np
-    import hyperspy.api as hs
 
     # Assuming it is the latest subgroup in the dataset, load it.
     with h5py.File(outfilename, 'r') as d:
