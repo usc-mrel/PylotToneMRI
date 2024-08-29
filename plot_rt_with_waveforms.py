@@ -121,7 +121,7 @@ if __name__ == '__main__':
         with h5py.File(filepath, 'r') as d:
             dset_names = list(d.keys())
             print(f'File {filepath} contains {len(dset_names)} groups (reconstruction runs):')
-            print(' ', '\n  '.join(dset_names))
+            # print(' ', '\n  '.join(dset_names))
 
         group = get_selection(dset_names)
         video_name = f'{filepath[:-4]}_{group}.mp4'
@@ -193,19 +193,24 @@ if __name__ == '__main__':
         framerate = 1/(np.mean(np.diff(time_frame)))
         imgs = np.flip(np.asarray(imgs), axis=2).transpose((2, 1, 0))
 
+        import respiratory_from_image
+
+        time_imresp, resp_imnav, lp = respiratory_from_image.main(filepath, group)
+        # lp = np.array(((imgs.shape[0]-lp[0,0]),()))
+
         # Time selection
 
         I_sel_I = ((time_frame > t_sel[0]) & (time_frame < t_sel[1])).squeeze()
         I_sel_l1 = ((time_ecg > t_sel[0]) & (time_ecg < t_sel[1])).squeeze()
         I_sel_l2 = ((time_pt > t_sel[0]) & (time_pt < t_sel[1])).squeeze()
         I_sel_l3 = ((time_pt > t_sel[0]) & (time_pt < t_sel[1])).squeeze()
-        I_sel_l4 = ((time_pt > t_sel[0]) & (time_pt < t_sel[1])).squeeze()
+        I_sel_l4 = ((time_imresp > t_sel[0]) & (time_imresp < t_sel[1])).squeeze()
 
         t_sel_I = time_frame[I_sel_I] - t_sel[0]
         t_sel_l1 = time_ecg[I_sel_l1] - t_sel[0]
         t_sel_l2 = time_pt[I_sel_l2] - t_sel[0]
         t_sel_l3 = time_pt[I_sel_l3] - t_sel[0]
-        t_sel_l4 = time_pt[I_sel_l4] - t_sel[0]
+        t_sel_l4 = time_imresp[I_sel_l4] - t_sel[0]
 
         pass
 
@@ -253,10 +258,11 @@ if __name__ == '__main__':
                                 t_sel_l2, cardiac_waveform[I_sel_l2],
                                 t_sel_l1, ecg_waveform[I_sel_l1],
                                 t_sel_l3, -resp_waveform[I_sel_l3] / np.percentile(np.abs(resp_waveform[I_sel_l3]), 99.9),
-                                # t_sel_I, resp_imnav[I_sel_I], lp[0])
-                                t_sel_l3, -resp_waveform[I_sel_l3] / np.percentile(np.abs(resp_waveform[I_sel_l3]), 99.9))
+                                t_sel_l4, resp_imnav[I_sel_l4])
+                                # t_sel_l3, -resp_waveform[I_sel_l3] / np.percentile(np.abs(resp_waveform[I_sel_l3]), 99.9))
 
-    ani = animation.FuncAnimation(fig, partial(update_mov, img=imgs[:, :, I_sel_I], t_sel=t_sel_I, lines=lines, lp=np.array([[0,0], [100, 100]])), frames=range(Nframes), interval=1e3/framerate, blit=True)
+    ani = animation.FuncAnimation(fig, partial(update_mov, img=imgs[:, :, I_sel_I], t_sel=t_sel_I, lines=lines, lp=lp), 
+                                  frames=range(Nframes), interval=1e3/framerate, blit=True)
     MWriter = animation.FFMpegWriter(fps=framerate)
     plt.show()
     print(f'Saving in {video_name}...')
