@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import os
 import scipy.io as sio
+from scipy.signal import savgol_filter
 import h5py
 import ismrmrd
 from ui.selectionui import get_filepath, get_selection
@@ -110,10 +111,10 @@ if __name__ == '__main__':
         exit()
         
     # Set video parameters
-    video_name = f'{filepath[:-4]}.mp4'
     framerate = 20
     ecg_sign = -1
-    t_sel = [1, 10]  # [s]
+    t_sel = [2, 17]  # [s]
+    video_name = f'{filepath[:-4]}_{t_sel[0]}s_{t_sel[1]}s.mp4'
 
     if filepath.endswith('.h5') or filepath.endswith('.mrd'):
         # If run multiple times, the recon.mrd file will have multiple reconstructed images
@@ -124,7 +125,7 @@ if __name__ == '__main__':
             # print(' ', '\n  '.join(dset_names))
 
         group = get_selection(dset_names)
-        video_name = f'{filepath[:-4]}_{group}.mp4'
+        video_name = f'{filepath[:-4]}_{t_sel[0]}s_{t_sel[1]}s_{group}.mp4'
         wf_list = []
         with ismrmrd.Dataset(filepath, group, False) as dset:
             subgroups = dset.list()
@@ -193,9 +194,21 @@ if __name__ == '__main__':
         framerate = 1/(np.mean(np.diff(time_frame)))
         imgs = np.flip(np.asarray(imgs), axis=2).transpose((2, 1, 0))
 
-        import respiratory_from_image
+        # Image based respiratory
+        resp_imnav = None
+        imresp_timestamp0 = 0
+        for wf in wf_list:
+            if wf.getHead().waveform_id == 1029:
+                resp_imnav = wf.data[0,:]
+                imresp_timestamp0 = wf.time_stamp
+                # time_imresp = 
+        if resp_imnav is None:
+            import respiratory_from_image
 
-        time_imresp, resp_imnav, lp = respiratory_from_image.main(filepath, group)
+            time_imresp, resp_imnav, lp = respiratory_from_image.main(filepath, group)
+        
+        resp_imnav = np.asarray(resp_imnav, dtype=float)/2**22
+        resp_imnav = savgol_filter(resp_imnav, 21, 3)
         # lp = np.array(((imgs.shape[0]-lp[0,0]),()))
 
         # Time selection
@@ -204,13 +217,13 @@ if __name__ == '__main__':
         I_sel_l1 = ((time_ecg > t_sel[0]) & (time_ecg < t_sel[1])).squeeze()
         I_sel_l2 = ((time_pt > t_sel[0]) & (time_pt < t_sel[1])).squeeze()
         I_sel_l3 = ((time_pt > t_sel[0]) & (time_pt < t_sel[1])).squeeze()
-        I_sel_l4 = ((time_imresp > t_sel[0]) & (time_imresp < t_sel[1])).squeeze()
+        I_sel_l4 = ((time_frame > t_sel[0]) & (time_frame < t_sel[1])).squeeze()
 
         t_sel_I = time_frame[I_sel_I] - t_sel[0]
         t_sel_l1 = time_ecg[I_sel_l1] - t_sel[0]
         t_sel_l2 = time_pt[I_sel_l2] - t_sel[0]
         t_sel_l3 = time_pt[I_sel_l3] - t_sel[0]
-        t_sel_l4 = time_imresp[I_sel_l4] - t_sel[0]
+        t_sel_l4 = time_frame[I_sel_l4] - t_sel[0]
 
         pass
 
@@ -261,7 +274,7 @@ if __name__ == '__main__':
                                 t_sel_l4, resp_imnav[I_sel_l4])
                                 # t_sel_l3, -resp_waveform[I_sel_l3] / np.percentile(np.abs(resp_waveform[I_sel_l3]), 99.9))
 
-    ani = animation.FuncAnimation(fig, partial(update_mov, img=imgs[:, :, I_sel_I], t_sel=t_sel_I, lines=lines, lp=lp), 
+    ani = animation.FuncAnimation(fig, partial(update_mov, img=imgs[:, :, I_sel_I], t_sel=t_sel_I, lines=lines, lp=np.array([[0,0], [0,0]])), 
                                   frames=range(Nframes), interval=1e3/framerate, blit=True)
     MWriter = animation.FFMpegWriter(fps=framerate)
     plt.show()

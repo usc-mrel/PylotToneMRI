@@ -1,3 +1,4 @@
+import warnings
 import h5py
 import ismrmrd
 import matplotlib.pyplot as plt
@@ -5,15 +6,16 @@ import matplotlib as mpl
 import numpy as np
 import numpy.typing as npt
 from pilottone import qint
-from scipy.signal import find_peaks
+from scipy.signal import find_peaks, savgol_filter
 from scipy.ndimage import median_filter
 from ui.selectionui import get_selection, get_filepath
 import hyperspy.api as hs
 
 def extract_nav_from_profile(line_profile, ):
     n_time = line_profile.shape[1]
+    line_profile = savgol_filter(line_profile, 5, 3, axis=0)
 
-    # line_profile = np.diff(line_profile, axis=0)
+    line_profile = np.diff(line_profile, axis=0)
     # Find peak method
     line_profile -= np.percentile(line_profile, 0.1, axis=0)
     line_profile /= np.percentile(line_profile, 99.9, axis=0)
@@ -41,7 +43,7 @@ def extract_nav_from_profile(line_profile, ):
         p,_,_ = qint(line_profile[pos1-1, c_i], line_profile[pos1, c_i], line_profile[pos1+1, c_i])
         nav[c_i] = pos1 + p
     
-    nav = median_filter(np.max(nav) - nav, size=(3,), axes=(0,))
+    nav = median_filter(np.max(nav) - nav, size=(5,), axes=(0,))
     return nav
 
 def get_line_profile(imgs: npt.NDArray[np.float32], 
@@ -75,7 +77,7 @@ def get_line_profile(imgs: npt.NDArray[np.float32],
     s.plot(navigator='spectrum', colorbar=False, axes_ticks=False)
     # hs.plot.plot_images(s)
     profile = line_roi.interactive(s, color='green', navigation_signal='same')
-    ax.imshow(profile.data.T, cmap='gray')
+    ax.imshow(profile.data.T, cmap='gray', aspect='auto')
     ax.set_axis_off()
     profile.events.data_changed.connect(profile_changed)
 
@@ -95,13 +97,24 @@ def normalize_to_uint32(arr: npt.NDArray):
     arr *= (2**32-1) # 0 to 2^32-1
     return arr.astype(np.uint32)
 
+def scale_as_uint32(arr: npt.NDArray, scale: int):
+    arr *= scale
+
+    if np.max(arr) > (2**32-1):
+        warnings.warn('Maximum value after scaling does not fit into uint32. It will overflow.')
+    if np.min(arr) < 0:
+        warnings.warn('Array has negative values. Such values will underflow.')
+
+    return arr.astype(np.uint32)
+
 class LinePlotCallBackHandler:
     is_done = False 
 
     def on_savebutton_press(self, event, resp_nav, time_stamps, time_step, outfilename, group):
         # Concat, and normalize pt waveforms.
         import ctypes
-        resp_nav = normalize_to_uint32(resp_nav) #((resp_nav/np.max(np.abs(resp_nav) - 0.5)*(2**31-1)) + 2**31).astype(np.uint32)
+        # resp_nav = normalize_to_uint32(resp_nav) #((resp_nav/np.max(np.abs(resp_nav) - 0.5)*(2**31-1)) + 2**31).astype(np.uint32)
+        resp_nav = scale_as_uint32(resp_nav, 2**22)
 
         nav_wf = ismrmrd.waveform.Waveform.from_array(resp_nav[None,:])
         nav_wf._head.sample_time_us = ctypes.c_float(time_step*1e6)
