@@ -20,6 +20,11 @@ def to_hybrid_kspace(indata):
     '''Centered ifft on first dimension. Does not do fftshift before ifft, as it treats data as time signal.'''
     return ifftshift(ifft(indata, None, axis=0), axes=0)
 
+def from_hybrid_kspace(indata):
+    '''Centered ifft on first dimension. Does not do fftshift before ifft, as it treats data as time signal.'''
+    return fft(fftshift(indata, axes=0), None, axis=0)
+
+
 def qint(ym1, y0, yp1):
     '''Quadratic interpolation.
         Parameters

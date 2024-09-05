@@ -1,114 +1,70 @@
-import ismrmrd
 import rtoml
-import os
-import fnmatch
-import sys
 import numpy as np
+import matplotlib
+matplotlib.use('QtAgg')
 import matplotlib.pyplot as plt
+from pilottone import beat_rejection, interval_peak_matching
+import mrdhelper
 from scipy.signal import find_peaks
-sys.path.append('./src')
-from pilottone.pt import beat_rejection, interval_peak_matching
 
-if __name__ == '__main__':
+def pt_ecg_jitter(time_pt, pt_cardiac, pt_cardiac_derivative, time_ecg, ecg_waveform, pt_cardiac_trigs=None, pt_derivative_trigs=None, ecg_trigs=None, skip_time=0.6, show_outputs=True): 
+    """ 
+    This function calculates the jitter between the pilot tone and the ECG triggers.
+    The ECG triggers are assumed to be correct. The PT triggers are assumed to be correct.
+    The peak locations of the PT and ECG are found and matched. The jitter is calculated from the differences between the matched peaks.
 
+    Parameters
+    ----------
+    time_pt : numpy array
+        Time axis of the PT waveform in seconds.
+    pt_cardiac : numpy array
+        PT waveform.
+    pt_cardiac_derivative : numpy array
+        Derivative of the PT waveform.
+    time_ecg : numpy array
+        Time axis of the ECG waveform in seconds.
+    ecg_waveform : numpy array
+        ECG waveform.
+    pt_cardiac_trigs : numpy array, optional
+        PT triggers. If None, they are calculated.
+    pt_derivative_trigs : numpy array, optional
+        Derivative PT triggers. If None, they are calculated.
+    ecg_trigs : numpy array, optional
+        ECG triggers. If None, they are calculated.
+    skip_time : float, optional
+        Time to skip at the beginning of the waveforms in seconds. The default is 0.6.
+    show_outputs : bool, optional
+        Whether to show the outputs. The default is True.
 
-    # Read config
-    with open('config.toml', 'r') as cf:
-        cfg = rtoml.load(cf)
+    Returns
+    -------
+    peak_diff : numpy array
+        Differences between the matched peaks.
+    derivative_peak_diff : numpy array
+        Differences between the matched derivative peaks.
 
-    DATA_ROOT = cfg['DATA_ROOT']
-    DATA_DIR = cfg['data_folder']
-    raw_file = cfg['raw_file']
-    gpu_device = cfg['gpu_num']
-
-    data_dir_path = os.path.join(DATA_ROOT, DATA_DIR, 'raw/h5')
-    if raw_file.isnumeric():
-        raw_file_ = fnmatch.filter(os.listdir(data_dir_path), f'meas_MID*{raw_file}*.h5')[0]
-        ismrmrd_data_fullpath = os.path.join(data_dir_path, raw_file_)
-    elif raw_file.startswith('meas_MID'):
-        raw_file_ = raw_file
-        ismrmrd_data_fullpath = os.path.join(data_dir_path, raw_file)
-    else:
-        print('Could not find the file. Exiting...')
-        exit(-1)
-
-    # Read the data in
-    print(f'Reading {ismrmrd_data_fullpath}...')
-    with ismrmrd.Dataset(ismrmrd_data_fullpath) as dset:
-        n_wf = dset.number_of_waveforms()
-        print(f'There are {n_wf} waveforms in the dataset. Reading...')
-
-        wf_list = []
-        for ii in range(n_wf):
-            wf_list.append(dset.read_waveform(ii))
-        
-        print('Waveforms read.')
-        hdr = ismrmrd.xsd.CreateFromDocument(dset.read_xml_header())
-        # Read the first and acquisitions for their timestamps
-        n_acq = dset.number_of_acquisitions()
-        acq_s = dset.read_acquisition(0)
-        acq_e = dset.read_acquisition(n_acq-1)
-
-    ## Process ECG waveform
-    ecg_waveform = []
-    ecg_trigs = []
-    wf_init_timestamp = 0
-    for wf in wf_list:
-        if wf.getHead().waveform_id == 0:
-            ecg_waveform.append(wf.data[0,:])
-            ecg_trigs.append(wf.data[4,:])
-            if wf_init_timestamp == 0:
-                wf_init_timestamp = wf.time_stamp
-                ecg_sampling_time = wf_list[0].getHead().sample_time_us*1e-6 # [us] -> [s]
-
-    ecg_waveform = (np.asarray(np.concatenate(ecg_waveform, axis=0), dtype=float)-2048)
-    ecg_waveform = ecg_waveform/np.percentile(ecg_waveform, 99.9)
-    ecg_trigs = (np.concatenate(ecg_trigs, axis=0)/2**14).astype(int)
-    time_ecg = np.arange(ecg_waveform.shape[0])*ecg_sampling_time - (acq_s.acquisition_time_stamp - wf_init_timestamp)*1e-3
-
-    ## Read PT
-    resp_waveform = []
-    pt_card_triggers = []
-
-    for wf in wf_list:
-        if wf.getHead().waveform_id == 1025:
-            resp_waveform = wf.data[0,:]
-            pt_cardiac = ((wf.data[1,:].astype(float) - 2**31)/2**31)
-            pt_cardiac_trigs = np.round(((wf.data[2,:] - 2**31)/2**31)).astype(int)
-            pt_cardiac_derivative = ((wf.data[3,:].astype(float) - 2**31)/2**31)
-            pt_derivative_trigs = np.round((wf.data[4,:] - 2**31)/2**31).astype(int)
-
-            pt_sampling_time = wf.getHead().sample_time_us*1e-6
-            break
-
-
-    t_acq_start = acq_s.acquisition_time_stamp*2.5e-3 # [2.5ms] -> [s]
-    t_acq_end = acq_e.acquisition_time_stamp*2.5e-3
-    time_acq = np.linspace(t_acq_start, t_acq_end, n_acq) # Interpolate for TR, as TR will not be a multiple of time resolution.
-    time_pt = time_acq - t_acq_start
-    samp_time_pt = time_acq[1] - time_acq[0]
-
-    plt.figure()
-    plt.plot(time_ecg, ecg_waveform)
-    plt.plot(time_ecg[ecg_trigs==1], ecg_waveform[ecg_trigs==1], '*')
-    plt.plot(time_pt, pt_cardiac_trigs, 'x', label='PT Triggers')
-
-    skip_time = 0.6 # [s]
+    """
 
     # ECG Triggers
-    # ecg_peak_locs,_ = find_peaks(ecg_waveform[time_ecg > skip_time], prominence=0.7)
+    if ecg_trigs is None:
+        ecg_peak_locs,_ = find_peaks(ecg_waveform[time_ecg > skip_time], prominence=0.7)
     ecg_peak_locs = np.nonzero(ecg_trigs[time_ecg > skip_time])[0]
     ecg_peak_locs += np.sum(time_ecg <= skip_time)
 
     # PT Triggers
     dt_pt = (time_pt[1] - time_pt[0])
-    Dmin = int(np.ceil(0.65/(dt_pt))) # Min distance between two peaks, should not be less than 0.6 secs (100 bpm max assumed)
-    # pt_cardiac_peak_locs,_ = find_peaks(pt_cardiac[time_pt > skip_time], prominence=0.4, distance=Dmin)
+    
+    if pt_cardiac_trigs is None:
+        Dmin = int(np.ceil(0.65/(dt_pt))) # Min distance between two peaks, should not be less than 0.6 secs (100 bpm max assumed)
+        pt_cardiac_peak_locs,_ = find_peaks(pt_cardiac[time_pt > skip_time], prominence=0.4, distance=Dmin)
+    
     pt_cardiac_peak_locs = np.nonzero(pt_cardiac_trigs[time_pt > skip_time])[0]
     pt_cardiac_peak_locs += np.sum(time_pt <= skip_time)
 
     # PT Derivative Triggers
-    # pt_cardiac_derivative_peak_locs,_ = find_peaks(pt_cardiac_derivative[time_pt > skip_time], prominence=0.6, distance=Dmin)
+    if pt_derivative_trigs is None:
+        pt_cardiac_derivative_peak_locs,_ = find_peaks(pt_cardiac_derivative[time_pt > skip_time], prominence=0.6, distance=Dmin)
+  
     pt_cardiac_derivative_peak_locs = np.nonzero(pt_derivative_trigs[time_pt > skip_time])[0]
     pt_cardiac_derivative_peak_locs += np.sum(time_pt <= skip_time)
 
@@ -116,9 +72,6 @@ if __name__ == '__main__':
     hr_accept_list = beat_rejection(pt_cardiac_peak_locs*dt_pt, "post")
     hr_accept_list_derivative = beat_rejection(pt_cardiac_derivative_peak_locs*dt_pt, "pre")
     # TODO: Is pre post even correct? Why does it change? Need to investigate.
-    print(f'Rejection ratio for pt peaks is {100*(len(hr_accept_list) - np.sum(hr_accept_list))/len(hr_accept_list):.2f} percent.\n')
-    print(f'Rejection ratio for derivative pt peaks is {100*(len(hr_accept_list_derivative) - np.sum(hr_accept_list_derivative))/len(hr_accept_list_derivative):.2f} percent.\n')
-
 
     # peak_diff, pt_peaks_selected = prepeak_matching(time_pt, pt_cardiac_peak_locs, time_ecg, ecg_peak_locs)
     # derivative_peak_diff, pt_derivative_peaks_selected = prepeak_matching(time_pt, pt_cardiac_derivative_peak_locs, time_ecg, ecg_peak_locs)
@@ -130,45 +83,90 @@ if __name__ == '__main__':
     pt_derivative_peaks_selected = pt_cardiac_derivative_peak_locs
 
     # Create trigger waveforms from peak locations.
+    n_acq = pt_cardiac_trigs.shape[0]
     pt_cardiac_trigs = np.zeros((n_acq,), dtype=np.uint32)
     pt_derivative_trigs = np.zeros((n_acq,), dtype=np.uint32)
     pt_cardiac_trigs[pt_peaks_selected] = 1
     pt_derivative_trigs[pt_derivative_peaks_selected] = 1
 
-    # Print some useful info
+    if show_outputs:
+        # Print some useful info
 
-    print(f'Peak difference {np.mean(peak_diff*1e3):.1f} \u00B1 {np.std(peak_diff*1e3):.1f}')
-    print(f'Derivative peak difference {np.mean(derivative_peak_diff*1e3):.1f} \u00B1 {np.std(derivative_peak_diff*1e3):.1f}')
+        print(f'Rejection ratio for pt peaks is {100*(len(hr_accept_list) - np.sum(hr_accept_list))/len(hr_accept_list):.2f} percent.\n')
+        print(f'Rejection ratio for derivative pt peaks is {100*(len(hr_accept_list_derivative) - np.sum(hr_accept_list_derivative))/len(hr_accept_list_derivative):.2f} percent.\n')
 
-    print(f'Number of ECG triggers: {ecg_peak_locs.shape[0]}.')
-    print(f'Number of PT triggers: {pt_cardiac_peak_locs.shape[0]}.')
-    print(f'Number of missed PT triggers: {miss_pks.shape[0]}.')
-    print(f'Number of extraneous PT triggers: {extra_pks.shape[0]}.')
-    print(f'Number of derivative PT triggers: {pt_cardiac_derivative_peak_locs.shape[0]}.')
-    print(f'Number of missed derivative PT triggers: {derivative_miss_pks.shape[0]}.')
-    print(f'Number of extraneous derivative PT triggers: {derivative_extra_pks.shape[0]}.')
+        print(f'Peak difference {np.mean(peak_diff*1e3):.1f} \u00B1 {np.std(peak_diff*1e3):.1f}')
+        print(f'Derivative peak difference {np.mean(derivative_peak_diff*1e3):.1f} \u00B1 {np.std(derivative_peak_diff*1e3):.1f}')
+
+        print(f'Number of ECG triggers: {ecg_peak_locs.shape[0]}.')
+        print(f'Number of PT triggers: {pt_cardiac_peak_locs.shape[0]}.')
+        print(f'Number of missed PT triggers: {miss_pks.shape[0]}.')
+        print(f'Number of extraneous PT triggers: {extra_pks.shape[0]}.')
+        print(f'Number of derivative PT triggers: {pt_cardiac_derivative_peak_locs.shape[0]}.')
+        print(f'Number of missed derivative PT triggers: {derivative_miss_pks.shape[0]}.')
+        print(f'Number of extraneous derivative PT triggers: {derivative_extra_pks.shape[0]}.')
 
 
-    # Plots
-    f, axs = plt.subplots(2,2, sharex='col')
-    axs[0,0].plot(time_pt, pt_cardiac, '-gD', markevery=pt_cardiac_peak_locs, label='Pilot Tone')
-    axs[0,0].plot(time_ecg, ecg_waveform, '-bs', markevery=ecg_peak_locs, label='ECG')
-    axs[0,0].set_xlabel('Time [s]')
-    axs[0,0].legend()
-    axs[0,0].set_title('ECG and Pilot Tone. Markers show triggers.')
+        # Plots
+        plt.figure()
+        plt.plot(time_ecg, ecg_waveform)
+        plt.plot(time_ecg[ecg_trigs==1], ecg_waveform[ecg_trigs==1], '*')
+        plt.plot(time_pt, pt_cardiac_trigs, 'x', label='PT Triggers')
 
-    axs[0,1].hist((peak_diff - np.mean(peak_diff))*1e3)
-    axs[0,1].set_xlabel('Time diff [ms]')
-    axs[0,1].set_ylabel('Number of peaks')
+        f, axs = plt.subplots(2,2, sharex='col')
+        axs[0,0].plot(time_pt, pt_cardiac, '-gD', markevery=pt_cardiac_peak_locs, label='Pilot Tone')
+        axs[0,0].plot(time_ecg, ecg_waveform, '-bs', markevery=ecg_peak_locs, label='ECG')
+        axs[0,0].set_xlabel('Time [s]')
+        axs[0,0].legend()
+        axs[0,0].set_title('ECG and Pilot Tone. Markers show triggers.')
 
-    axs[1,0].plot(time_pt, pt_cardiac_derivative, '-gD', markevery=pt_cardiac_derivative_peak_locs, label='Pilot Tone')
-    axs[1,0].plot(time_ecg, ecg_waveform, '-bs', markevery=ecg_peak_locs, label='ECG')
-    axs[1,0].set_xlabel('Time [s]')
-    axs[1,0].legend()
-    axs[1,0].set_title('ECG and Inverse Derivative Pilot Tone. Markers show triggers.')
+        axs[0,1].hist((peak_diff - np.mean(peak_diff))*1e3)
+        axs[0,1].set_xlabel('Time diff [ms]')
+        axs[0,1].set_ylabel('Number of peaks')
 
-    axs[1,1].hist((derivative_peak_diff - np.mean(derivative_peak_diff))*1e3)
-    axs[1,1].set_xlabel('Time diff [ms]')
-    axs[1,1].set_ylabel('Number of peaks')
+        axs[1,0].plot(time_pt, pt_cardiac_derivative, '-gD', markevery=pt_cardiac_derivative_peak_locs, label='Pilot Tone')
+        axs[1,0].plot(time_ecg, ecg_waveform, '-bs', markevery=ecg_peak_locs, label='ECG')
+        axs[1,0].set_xlabel('Time [s]')
+        axs[1,0].legend()
+        axs[1,0].set_title('ECG and Inverse Derivative Pilot Tone. Markers show triggers.')
 
-    plt.show()
+        axs[1,1].hist((derivative_peak_diff - np.mean(derivative_peak_diff))*1e3)
+        axs[1,1].set_xlabel('Time diff [ms]')
+        axs[1,1].set_ylabel('Number of peaks')
+
+        plt.show(block=True)
+    
+    return peak_diff, derivative_peak_diff
+
+if __name__ == '__main__':
+
+    # Read config
+    with open('config.toml', 'r') as cf:
+        cfg = rtoml.load(cf)
+
+    DATA_ROOT = cfg['DATA_ROOT']
+    DATA_DIR = cfg['data_folder']
+    raw_file = cfg['raw_file']
+
+    ismrmrd_data_fullpath, _ = mrdhelper.siemens_mrd_finder(DATA_ROOT, DATA_DIR, raw_file)
+
+    # Read the data in
+    wf_list, _ = mrdhelper.read_waveforms(ismrmrd_data_fullpath)
+
+    ecg_, pt_ = mrdhelper.waveforms_asarray(wf_list)
+    ecg_waveform = ecg_['ecg_waveform']
+    ecg_trigs = ecg_['ecg_trigs']
+    time_ecg = ecg_['time_ecg']
+
+    pt_cardiac_trigs = pt_['pt_cardiac_trigs']
+    pt_derivative_trigs = pt_['pt_derivative_trigs']
+    pt_cardiac = pt_['pt_cardiac']
+    pt_cardiac_derivative = pt_['pt_cardiac_derivative']
+    time_pt = pt_['time_pt']
+
+    # Shift the time axes for our mortal brains
+    t_ref = min(time_ecg[0], time_pt[0])
+    time_ecg -= t_ref
+    time_pt -= t_ref
+
+    pt_ecg_jitter(time_pt, pt_cardiac, pt_cardiac_derivative, time_ecg, ecg_waveform, pt_cardiac_trigs, pt_derivative_trigs, ecg_trigs)
