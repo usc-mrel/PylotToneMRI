@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib
 matplotlib.use('QtAgg')
 import matplotlib.pyplot as plt
-from pilottone import beat_rejection, interval_peak_matching
+from pilottone import beat_rejection, interval_peak_matching, get_volt_from_protoname
 import mrdhelper
 from scipy.signal import find_peaks
 
@@ -134,7 +134,7 @@ def pt_ecg_jitter(time_pt, pt_cardiac, pt_cardiac_derivative, time_ecg, ecg_wave
         axs[1,1].set_xlabel('Time diff [ms]')
         axs[1,1].set_ylabel('Number of peaks')
 
-        plt.show(block=True)
+        plt.show()
     
     return peak_diff, derivative_peak_diff
 
@@ -146,27 +146,50 @@ if __name__ == '__main__':
 
     DATA_ROOT = cfg['DATA_ROOT']
     DATA_DIR = cfg['data_folder']
-    raw_file = cfg['raw_file']
+    # raw_file = cfg['raw_file']
+    raw_files = ['283', '284', '285', '286', '287', '289', '290', '291', '292']
+    pk_diffs = {}
+    derivative_pk_diffs = {}
+    for raw_file in raw_files:
+        ismrmrd_data_fullpath, _ = mrdhelper.siemens_mrd_finder(DATA_ROOT, DATA_DIR, raw_file)
+        ptvolt = get_volt_from_protoname(ismrmrd_data_fullpath.split('/')[-1])
+        # Read the data in
+        wf_list, _ = mrdhelper.read_waveforms(ismrmrd_data_fullpath)
 
-    ismrmrd_data_fullpath, _ = mrdhelper.siemens_mrd_finder(DATA_ROOT, DATA_DIR, raw_file)
+        ecg_, pt_ = mrdhelper.waveforms_asarray(wf_list)
+        ecg_waveform = ecg_['ecg_waveform']
+        ecg_trigs = ecg_['ecg_trigs']
+        time_ecg = ecg_['time_ecg']
 
-    # Read the data in
-    wf_list, _ = mrdhelper.read_waveforms(ismrmrd_data_fullpath)
+        pt_cardiac_trigs = pt_['pt_cardiac_trigs']
+        pt_derivative_trigs = pt_['pt_derivative_trigs']
+        pt_cardiac = pt_['pt_cardiac']
+        pt_cardiac_derivative = pt_['pt_cardiac_derivative']
+        time_pt = pt_['time_pt']
 
-    ecg_, pt_ = mrdhelper.waveforms_asarray(wf_list)
-    ecg_waveform = ecg_['ecg_waveform']
-    ecg_trigs = ecg_['ecg_trigs']
-    time_ecg = ecg_['time_ecg']
+        # Shift the time axes for our mortal brains
+        t_ref = min(time_ecg[0], time_pt[0])
+        time_ecg -= t_ref
+        time_pt -= t_ref
 
-    pt_cardiac_trigs = pt_['pt_cardiac_trigs']
-    pt_derivative_trigs = pt_['pt_derivative_trigs']
-    pt_cardiac = pt_['pt_cardiac']
-    pt_cardiac_derivative = pt_['pt_cardiac_derivative']
-    time_pt = pt_['time_pt']
+        pk_diffs[raw_file], derivative_pk_diffs[raw_file] = pt_ecg_jitter(time_pt, pt_cardiac, pt_cardiac_derivative, time_ecg, ecg_waveform, pt_cardiac_trigs, pt_derivative_trigs, ecg_trigs, show_outputs=False)
 
-    # Shift the time axes for our mortal brains
-    t_ref = min(time_ecg[0], time_pt[0])
-    time_ecg -= t_ref
-    time_pt -= t_ref
+        pk_diffs[raw_file] = (ptvolt, pk_diffs[raw_file])
+        derivative_pk_diffs[raw_file] = (ptvolt, derivative_pk_diffs[raw_file])
 
-    pt_ecg_jitter(time_pt, pt_cardiac, pt_cardiac_derivative, time_ecg, ecg_waveform, pt_cardiac_trigs, pt_derivative_trigs, ecg_trigs)
+    jitter = np.array([np.std(pk_diffs[raw_file][1]) for raw_file in raw_files])
+    mean_delay = np.array([np.mean(pk_diffs[raw_file][1]) for raw_file in raw_files])
+    ptvolts = np.array([pk_diffs[raw_file][0] for raw_file in raw_files])
+
+    plt.figure()
+    plt.plot(ptvolts, jitter*1e3, 'o')
+    plt.xlabel('Pilot Tone Voltage [V]')
+    plt.ylabel('Jitter [ms]')
+    plt.title('Jitter vs PT Voltage')
+
+    plt.figure()
+    plt.plot(ptvolts, mean_delay*1e3, 'o')
+    plt.xlabel('Pilot Tone Voltage [V]')
+    plt.ylabel('Mean Delay [ms]')
+    plt.title('Mean Delay vs PT Voltage')
+    plt.show()

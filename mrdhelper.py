@@ -5,7 +5,7 @@ import os
 import fnmatch
 import warnings
 
-def siemens_mrd_finder(data_root: str, data_folder: str, raw_file: str, h5folderext: str = '') -> str:
+def siemens_mrd_finder(data_root: str, data_folder: str, raw_file: str, h5folderext: str = '', rawfile_ext: str = '') -> str:
     """
     Finds the full paths of the Siemens MRD data file and noise file.
 
@@ -36,7 +36,7 @@ def siemens_mrd_finder(data_root: str, data_folder: str, raw_file: str, h5folder
     noise_dir_path = os.path.join(data_root, data_folder, 'raw/noise')
 
     if raw_file.isnumeric():
-        raw_file_ = fnmatch.filter(os.listdir(data_dir_path), f'meas_MID*{raw_file}*.h5')[0]
+        raw_file_ = fnmatch.filter(os.listdir(data_dir_path), f'meas_MID*{raw_file}*{rawfile_ext}.h5')[0]
     elif raw_file.startswith('meas_MID'):
         raw_file_ = raw_file
     else:
