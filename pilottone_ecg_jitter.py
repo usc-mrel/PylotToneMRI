@@ -1,8 +1,8 @@
+import datetime
+import os
 import rtoml
 import numpy as np
-import matplotlib
-matplotlib.use('QtAgg')
-import matplotlib.pyplot as plt
+
 from pilottone import beat_rejection, interval_peak_matching, get_volt_from_protoname
 import mrdhelper
 from scipy.signal import find_peaks
@@ -48,7 +48,8 @@ def pt_ecg_jitter(time_pt, pt_cardiac, pt_cardiac_derivative, time_ecg, ecg_wave
     # ECG Triggers
     if ecg_trigs is None:
         ecg_peak_locs,_ = find_peaks(ecg_waveform[time_ecg > skip_time], prominence=0.7)
-    ecg_peak_locs = np.nonzero(ecg_trigs[time_ecg > skip_time])[0]
+    else:
+        ecg_peak_locs = np.nonzero(ecg_trigs[time_ecg > skip_time])[0]
     ecg_peak_locs += np.sum(time_ecg <= skip_time)
 
     # PT Triggers
@@ -57,15 +58,15 @@ def pt_ecg_jitter(time_pt, pt_cardiac, pt_cardiac_derivative, time_ecg, ecg_wave
     if pt_cardiac_trigs is None:
         Dmin = int(np.ceil(0.65/(dt_pt))) # Min distance between two peaks, should not be less than 0.6 secs (100 bpm max assumed)
         pt_cardiac_peak_locs,_ = find_peaks(pt_cardiac[time_pt > skip_time], prominence=0.4, distance=Dmin)
-    
-    pt_cardiac_peak_locs = np.nonzero(pt_cardiac_trigs[time_pt > skip_time])[0]
+    else:
+        pt_cardiac_peak_locs = np.nonzero(pt_cardiac_trigs[time_pt > skip_time])[0]
     pt_cardiac_peak_locs += np.sum(time_pt <= skip_time)
 
     # PT Derivative Triggers
     if pt_derivative_trigs is None:
         pt_cardiac_derivative_peak_locs,_ = find_peaks(pt_cardiac_derivative[time_pt > skip_time], prominence=0.6, distance=Dmin)
-  
-    pt_cardiac_derivative_peak_locs = np.nonzero(pt_derivative_trigs[time_pt > skip_time])[0]
+    else:
+        pt_cardiac_derivative_peak_locs = np.nonzero(pt_derivative_trigs[time_pt > skip_time])[0]
     pt_cardiac_derivative_peak_locs += np.sum(time_pt <= skip_time)
 
     # "Arryhtmia detection" by heart rate variation
@@ -83,7 +84,7 @@ def pt_ecg_jitter(time_pt, pt_cardiac, pt_cardiac_derivative, time_ecg, ecg_wave
     pt_derivative_peaks_selected = pt_cardiac_derivative_peak_locs
 
     # Create trigger waveforms from peak locations.
-    n_acq = pt_cardiac_trigs.shape[0]
+    n_acq = pt_cardiac.shape[0]
     pt_cardiac_trigs = np.zeros((n_acq,), dtype=np.uint32)
     pt_derivative_trigs = np.zeros((n_acq,), dtype=np.uint32)
     pt_cardiac_trigs[pt_peaks_selected] = 1
@@ -106,7 +107,7 @@ def pt_ecg_jitter(time_pt, pt_cardiac, pt_cardiac_derivative, time_ecg, ecg_wave
         print(f'Number of missed derivative PT triggers: {derivative_miss_pks.shape[0]}.')
         print(f'Number of extraneous derivative PT triggers: {derivative_extra_pks.shape[0]}.')
 
-
+        import matplotlib.pyplot as plt
         # Plots
         plt.figure()
         plt.plot(time_ecg, ecg_waveform)
@@ -140,6 +141,9 @@ def pt_ecg_jitter(time_pt, pt_cardiac, pt_cardiac_derivative, time_ecg, ecg_wave
 
 if __name__ == '__main__':
 
+    import matplotlib
+    matplotlib.use('QtAgg')
+    import matplotlib.pyplot as plt
     # Read config
     with open('config.toml', 'r') as cf:
         cfg = rtoml.load(cf)
@@ -147,7 +151,7 @@ if __name__ == '__main__':
     DATA_ROOT = cfg['DATA_ROOT']
     DATA_DIR = cfg['data_folder']
     # raw_file = cfg['raw_file']
-    raw_files = ['283', '284', '285', '286', '287', '289', '290', '291', '292']
+    raw_files = ['282', '283', '284', '285', '286', '287', '289', '290', '291', '292']
     pk_diffs = {}
     derivative_pk_diffs = {}
     for raw_file in raw_files:
@@ -193,3 +197,6 @@ if __name__ == '__main__':
     plt.ylabel('Mean Delay [ms]')
     plt.title('Mean Delay vs PT Voltage')
     plt.show()
+
+    np.savez_compressed(os.path.join('output_recons', DATA_DIR, f'jitter_{datetime.datetime.now()}.npz'), 
+                        ptvolts=ptvolts, pk_diffs=pk_diffs, derivative_pk_diffs=derivative_pk_diffs)

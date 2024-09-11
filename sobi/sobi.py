@@ -106,7 +106,7 @@ def jd(X, eps=1.0e-6, random_order = True):
     counter = 0
     off_val = []
     while keep_going:
-        print('{}: {}'.format(counter, off(X)))
+        # print('{}: {}'.format(counter, off(X)))
         counter += 1
         keep_going = False
 

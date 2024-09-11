@@ -20,3 +20,4 @@ dependencies:
   - hyperspy
   - rtoml
   - pip
+  - cupy # For GPU acceleration at EDITER processing.

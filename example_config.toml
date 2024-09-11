@@ -17,6 +17,11 @@ output_folder   = "output_recons"
 prewhiten = true
 autosniffer_select = true
 
+[pilottone]
+pt_freq = 24e6
+prewhiten = true
+discard_badcoils = true # Uses the same algorithm as autosniffer_select to discard bad coils.
+
 [saving]
 remove_os = true # Remove 2x oversampling when saving the raw data
 save_model_subtracted = true # Whether or not to save PT model subtracted data in main_pilottone_extract script.

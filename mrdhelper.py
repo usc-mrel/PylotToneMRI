@@ -43,7 +43,7 @@ def siemens_mrd_finder(data_root: str, data_folder: str, raw_file: str, h5folder
         warnings.warn('Could not find the file.', warnings.Error)
     
     ismrmrd_data_fullpath = os.path.join(data_dir_path, raw_file_)
-    ismrmrd_noise_fullpath = os.path.join(noise_dir_path, raw_file_)
+    ismrmrd_noise_fullpath = os.path.join(noise_dir_path, f'noise_{raw_file_}')
 
     return ismrmrd_data_fullpath, ismrmrd_noise_fullpath
     
