@@ -64,11 +64,20 @@ def get_selection(selection_list: list[str]):
     app.shutdown()
     return window.selected_item
 
-def get_filepath():
+def get_filepath(dir: str=''):
     '''QT based file selection UI.'''
     app = QApplication(sys.argv)
     options = QFileDialog.Options()
     options |= QFileDialog.ReadOnly
-    file_path, _ = QFileDialog.getOpenFileName(None, "Select an MRD image file", "", "MRD Files (*.mrd *.h5);;All Files (*)", options=options)
+    file_path, _ = QFileDialog.getOpenFileName(None, "Select an MRD image file", dir, "MRD Files (*.mrd *.h5);;All Files (*)", options=options)
     app.shutdown()
     return file_path
+
+def get_multiple_filepaths(dir: str=''):
+    '''QT based file selection UI for multiple files.'''
+    app = QApplication(sys.argv)
+    options = QFileDialog.Options()
+    options |= QFileDialog.ReadOnly
+    file_paths, _ = QFileDialog.getOpenFileNames(None, "Select MRD image files", dir, "MRD Files (*.mrd *.h5);;All Files (*)", options=options)
+    app.shutdown()
+    return file_paths
