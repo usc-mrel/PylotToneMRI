@@ -5,7 +5,8 @@ import datetime
 import os
 from pathlib import Path
 from types import SimpleNamespace
-from mrdhelper import siemens_mrd_finder
+
+from ui.selectionui import get_multiple_filepaths
 
 import rtoml
 
@@ -17,19 +18,15 @@ with open('config.toml', 'r') as cf:
 
 DATA_ROOT   = cfg['DATA_ROOT']
 DATA_DIR    = cfg['data_folder']
-# raw_file    = cfg['raw_file']
-raw_files = ['283', '284', '285', '286', '287', '289', '290', '291', '292']
+filepaths = get_multiple_filepaths(dir=os.path.join(DATA_ROOT, DATA_DIR, 'raw'))
+
 recon_method    = cfg['reconstruction']['recon_type']
 server_port     = cfg['reconstruction']['server_port']
 show_images     = cfg['reconstruction']['show_images']
 output_folder   = cfg['reconstruction']['output_folder']
 
-if type(raw_files) is str:
-    raw_files = [raw_files]
+for ismrmrd_data_fullpath in filepaths:
 
-for raw_file in raw_files:
-    ismrmrd_data_fullpath, _ = siemens_mrd_finder(DATA_ROOT, DATA_DIR, raw_file, 
-                                                h5folderext='_proc', rawfile_ext='_mdlsub')
     raw_file_ = ismrmrd_data_fullpath.split('/')[-1]
 
     # Mapping from recon method to config file name for the server
