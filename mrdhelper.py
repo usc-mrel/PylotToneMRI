@@ -115,10 +115,13 @@ def waveforms_asarray(waveform_list: list[ismrmrd.Waveform]) -> tuple[dict[str, 
     ecg_waveform = ecg_waveform/np.percentile(ecg_waveform, 99.9)
     ecg_trigs = (np.concatenate(ecg_trigs, axis=0)/2**14).astype(int)
     time_ecg = np.arange(ecg_waveform.shape[0])*ecg_sampling_time + ecg_init_timestamp*2.5e-3
-
-    time_pt = np.arange(resp_waveform.shape[0])*pt_sampling_time + pt_init_timestamp*2.5e-3
-
     ecg_ = {'time_ecg': time_ecg, 'ecg_waveform': ecg_waveform, 'ecg_trigs': ecg_trigs, 'ecg_sampling_time': ecg_sampling_time, 'ecg_init_timestamp': ecg_init_timestamp}
+    
+    if len(resp_waveform) == 0:
+        warnings.warn('No PT waveform found.')
+        return ecg_, None
+    
+    time_pt = np.arange(resp_waveform.shape[0])*pt_sampling_time + pt_init_timestamp*2.5e-3
     pt_ = {'time_pt': time_pt, 'resp_waveform': resp_waveform, 'pt_cardiac': pt_cardiac, 'pt_cardiac_trigs': pt_cardiac_trigs, 'pt_cardiac_derivative': pt_cardiac_derivative, 'pt_derivative_trigs': pt_derivative_trigs, 'pt_sampling_time': pt_sampling_time, 'pt_init_timestamp': pt_init_timestamp}
 
     return ecg_, pt_

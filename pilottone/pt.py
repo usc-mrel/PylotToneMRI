@@ -181,7 +181,44 @@ def pickcoilsbycorr(insig, start_ch, corr_th):
 
     return accept_list, sign_list, corrs
 
+def check_waveform_polarity(waveform: npt.NDArray[np.float64], prominence: float=0.5) -> int:
+    '''Check the polarity of the waveform and return the sign.
+    The logic is, peaks looking up should be narrower than the bottom side for better triggering.
+    
+    Parameters:
+    ----------
+    waveform (np.array): Waveform to check.
+    prominence (float): Prominence threshold for peak detection.
+
+    Returns:
+    ----------
+    wf_sign (int): Sign of the waveform. 1 for positive, -1 for negative.
+    '''
+    p1, d1 = find_peaks(waveform, prominence=prominence)
+    w1,_,_,_ = peak_widths(waveform, p1)
+    p2, d2 = find_peaks(-waveform, prominence=prominence)
+    w2,_,_,_ = peak_widths(-waveform, p2)
+
+    wf_sign = 1
+    if np.sum(w1) > np.sum(w2):
+        print('Cardiac waveform looks flipped. Flipping it..')
+        wf_sign = -1
+
+    return wf_sign
+
 def extract_pilottone_navs(pt_sig, f_samp: float, params: dict):
+    '''Extract the respiratory and cardiac pilot tone signals from the given PT signal.
+    Parameters:
+    ----------
+    pt_sig (np.array): Pilot tone signal.
+    f_samp (float): Sampling frequency of the PT signal.
+    params (dict): Dictionary containing the parameters for the extraction.
+
+    Returns:
+    ----------
+    pt_respiratory (np.array): Extracted respiratory pilot tone signal.
+    pt_cardiac (np.array): Extracted cardiac pilot tone signal.
+    '''
     n_pt_samp = pt_sig.shape[0]
     n_ch = pt_sig.shape[1]
     dt_pt = 1/f_samp
@@ -406,7 +443,7 @@ def interval_peak_matching(time_pt, pt_cardiac_peak_locs, time_ecg, ecg_peak_loc
 
     return np.asarray(peak_diff), np.asarray(miss_pk_idx), np.asarray(extra_pk_idx)
 
-def extract_triggers(time_pt, cardiac_waveform, skip_time=0.6):
+def extract_triggers(time_pt, cardiac_waveform, skip_time=0.6, prominence=0.4):
     ''' Extract triggers from the cardiac waveform.
         Parameters:
             time_pt: np.array
@@ -421,7 +458,7 @@ def extract_triggers(time_pt, cardiac_waveform, skip_time=0.6):
     '''
     dt_pt = (time_pt[1] - time_pt[0])
     Dmin = int(np.ceil(0.6/(dt_pt))) # Min distance between two peaks, should not be less than 0.6 secs (100 bpm max assumed)
-    pt_cardiac_peak_locs,_ = find_peaks(cardiac_waveform[time_pt > skip_time], prominence=0.4, distance=Dmin)
+    pt_cardiac_peak_locs,_ = find_peaks(cardiac_waveform[time_pt > skip_time], prominence=prominence, distance=Dmin)
     pt_cardiac_peak_locs += np.sum(time_pt <= skip_time)
     pt_peaks_selected = pt_cardiac_peak_locs
     n_acq = time_pt.shape[0]
