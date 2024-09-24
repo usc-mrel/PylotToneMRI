@@ -126,7 +126,7 @@ if prewhiten:
     _,axs = plt.subplots(1,2)
     axs[0].imshow(np.abs(dmtx))
     axs[1].imshow(np.abs(dmtx2))
-    plt.show()
+    # plt.show()
 
 
 # %%
@@ -183,7 +183,6 @@ plt.plot(np.sort(S), "*")
 plt.figure()
 plt.plot(np.abs(ksp_measured[:,0,0].squeeze()))
 plt.plot(np.abs(ksp_sniffer2[:,0,0].squeeze()))
-plt.show()
 
 # %%
 
@@ -192,9 +191,7 @@ plt.show()
 # ===============================================================
 start_time = time.time()
 
-# emi_hat = np.zeros(ksp_measured.shape, dtype=np.complex64)
-
-
+print('Running EDITER...')
 dk = [3, 0]
 
 w = np.concatenate((np.zeros((pre_discard, coord.shape[2])), np.sqrt(coord[0,:,:]**2 + coord[1,:,:]**2))).astype(np.float32)
@@ -211,7 +208,7 @@ chs = range(ksp_measured.shape[2])
 def process_channel(ch):
     est_emi_ch, _ = apply_editer(ksp_measured[:, :, ch], ksp_sniffer2, editer_params, w)
     return est_emi_ch
-# results = [process_channel(ch_i) for ch_i in chs] # Single process for dbg
+
 with mp.Pool(processes=len(chs)) as pool:
     results = pool.map(process_channel, chs)
 
