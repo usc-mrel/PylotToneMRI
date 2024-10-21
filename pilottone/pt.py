@@ -1,3 +1,4 @@
+import wave
 from numpy.fft import ifft, fft
 from scipy.signal.windows import tukey
 from scipy.linalg import lstsq
@@ -194,8 +195,16 @@ def check_waveform_polarity(waveform: npt.NDArray[np.float64], prominence: float
     ----------
     wf_sign (int): Sign of the waveform. 1 for positive, -1 for negative.
     '''
-    p1, d1 = find_peaks(waveform, prominence=prominence)
-    w1,_,_,_ = peak_widths(waveform, p1)
+    waveform_ = waveform.copy()
+    waveform_ -= np.percentile(waveform_, 5)
+    waveform_ = waveform_/np.percentile(waveform_, 99)
+    p1, d1 = find_peaks(waveform_, prominence=prominence)
+    w1,_,_,_ = peak_widths(waveform_, p1)
+
+    waveform_ = -waveform_
+    waveform_ -= np.percentile(waveform_, 5)
+    waveform_ = waveform_/np.percentile(waveform_, 99)
+
     p2, d2 = find_peaks(-waveform, prominence=prominence)
     w2,_,_,_ = peak_widths(-waveform, p2)
 
@@ -322,20 +331,24 @@ def extract_pilottone_navs(pt_sig, f_samp: float, params: dict):
 
     # Normalize navs before returning.
     # Here, I am using prctile instead of the max to avoid weird spikes.
-    pt_cardiac = pt_cardiac/np.percentile(pt_cardiac, 99)
+    # pt_cardiac -= np.percentile(pt_cardiac, 5)
+    # pt_cardiac = pt_cardiac/np.percentile(pt_cardiac, 99)
     pt_respiratory = pt_respiratory/np.percentile(pt_respiratory, 99)
 
 
     # Check if the waveform is flipped and flip if necessary.
     # Logic is, peaks looking up should be narrower than the bottom side for better triggering.
-    p1, d1 = find_peaks(pt_cardiac[time_pt > 0.6], prominence=0.5)
-    w1,_,_,_ = peak_widths(pt_cardiac[time_pt > 0.6], p1)
-    p2, d2 = find_peaks(-pt_cardiac[time_pt > 0.6], prominence=0.5)
-    w2,_,_,_ = peak_widths(-pt_cardiac[time_pt > 0.6], p2)
+    ptc_sign = check_waveform_polarity(pt_cardiac[40:], prominence=0.5)
+    pt_cardiac = ptc_sign*pt_cardiac
 
-    if np.sum(w1) > np.sum(w2):
-        print('Cardiac waveform looks flipped. Flipping it..')
-        pt_cardiac = -pt_cardiac
+    # p1, d1 = find_peaks(pt_cardiac[time_pt > 0.6], prominence=0.5)
+    # w1,_,_,_ = peak_widths(pt_cardiac[time_pt > 0.6], p1)
+    # p2, d2 = find_peaks(-pt_cardiac[time_pt > 0.6], prominence=0.5)
+    # w2,_,_,_ = peak_widths(-pt_cardiac[time_pt > 0.6], p2)
+
+    # if np.sum(w1) > np.sum(w2):
+    #     print('Cardiac waveform looks flipped. Flipping it..')
+    #     pt_cardiac = -pt_cardiac
     
     # Shift the base and normalize again to make it mostly 0 to 1
     pt_cardiac -= np.percentile(pt_cardiac, 5)
