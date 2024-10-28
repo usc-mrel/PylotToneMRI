@@ -1,4 +1,5 @@
 from functools import partial
+from gettext import dpgettext
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
@@ -9,23 +10,35 @@ import h5py
 import ismrmrd
 from ui.selectionui import get_filepath, get_selection
 
-def prep_1mov4navs_figure2(img, t_l1, l1, t_l2, l2, t_l3, l3, t_l4, l4):
+def centered_crop(img, crop_to):
+    '''Crops the image to the desired size, centered.'''
+    Ny, Nx, Nt = img.shape
+    y0 = Ny // 2 - crop_to[0] // 2
+    x0 = Nx // 2 - crop_to[1] // 2
+    return img[y0:y0+crop_to[0], x0:x0+crop_to[1], :]
+
+def prep_1mov4navs_figure2(img, t_l1, l1, t_l2, l2, t_l3, l3, t_l4=None, l4=None, highlights:list=[]):
     '''Creates the axes with the right sizes, and prepares the background for blipping. Returns the figure and the artists to be updated.'''
     # Colors for the Boxes and Texts
     
     fn = 'DejaVu Sans'
-    fs = 16
+    fs = 14
     
-    Nplots = 4
+    if t_l4 is None or l4 is None: 
+        Nplots = 3
+    else:
+        Nplots = 4
     
     # Padding and the Grid Size
-    y_padding = 30
-    x_padding_left = 150
+    y_padding = 40
+    x_padding_left = 110
     x_padding_right = 10
     im_scale = 3
     Ny2, Nx2, _ = img.shape
     Ny2 *= im_scale
     Nx2 *= im_scale
+
+    xlims = [0, max(t_l1[-1], t_l2[-1], t_l3[-1])+0.1]
     
     # Width and Height Accordingly
     h_pl = (Nx2 - (Nplots - 1) * y_padding) / Nplots
@@ -47,46 +60,60 @@ def prep_1mov4navs_figure2(img, t_l1, l1, t_l2, l2, t_l3, l3, t_l4, l4):
 
     # Line Profiles
     
-    # Line profile for SMS1, Slice1
-    ax1 = fig.add_axes([(Nx2 + x_padding_left) / W, (5*y_padding + 3*h_pl) / H, w_pl / W, h_pl / H])
-    ax1.plot(t_l1, l1, linewidth=2)
+    axs = []
+    axs.append(fig.add_axes([(Nx2 + x_padding_left) / W, ((Nplots+1)*y_padding + (Nplots-1)*h_pl) / H, w_pl / W, h_pl / H]))
+    axs[0].plot(t_l1, l1, linewidth=2)
 
-    ax1.legend(['Cardiac Pilot Tone'], loc='lower right')
-    ax1.set_ylabel('Cardiac\ndisplacement', fontname=fn)
-    ax1.axes.yaxis.set_ticklabels([])
+    axs[0].legend(['Cardiac Pilot Tone'], loc='lower right')
+    axs[0].set_ylabel('Cardiac\ndisplacement', fontname=fn)
+    axs[0].axes.yaxis.set_ticklabels([])
+    axs[0].set_xlim(xlims)
 
-    # Line profile for SMS1, Slice2
-    ax2 = fig.add_axes([(Nx2 + x_padding_left) / W, (4*y_padding + 2*h_pl) / H, w_pl / W, h_pl / H])
-    ax2.plot(t_l2, l2, 'r', linewidth=2)
+    # Line profile
+    axs.append(fig.add_axes([(Nx2 + x_padding_left) / W, ((Nplots)*y_padding + (Nplots-2)*h_pl) / H, w_pl / W, h_pl / H]))
+    axs[1].plot(t_l2, l2, 'r', linewidth=2)
 
-    ax2.legend(['ECG'], loc='lower right')
-    ax2.set_ylabel('ECG\namplitude')
-    ax2.axes.yaxis.set_ticklabels([])
+    axs[1].legend(['ECG'], loc='lower right')
+    axs[1].set_ylabel('ECG\namplitude')
+    axs[1].axes.yaxis.set_ticklabels([])
+    axs[1].set_xlim(xlims)
+
     # Line profile for Respiratory Pilot Tone
-    ax3 = fig.add_axes([(Nx2 + x_padding_left) / W, (3*y_padding + 1*h_pl) / H, w_pl / W, h_pl / H])
-    ax3.plot(t_l3, l3, linewidth=2)
-    ax3.legend(['Respiratory Pilot Tone'], loc='lower right')
-    ax3.set_ylabel('Respiratory\ndisplacement')
-    ax3.axes.yaxis.set_ticklabels([])
+    axs.append(fig.add_axes([(Nx2 + x_padding_left) / W, ((Nplots-1)*y_padding + (Nplots-3)*h_pl) / H, w_pl / W, h_pl / H]))
+    axs[2].plot(t_l3, l3, linewidth=2)
+    axs[2].legend(['Respiratory Pilot Tone'], loc='lower right')
+    axs[2].set_ylabel('Respiratory\ndisplacement')
+    axs[2].axes.yaxis.set_ticklabels([])
+    axs[2].set_xlim(xlims)
 
     # Line profile for Liver Dome Movement
-    ax4 = fig.add_axes([(Nx2 + x_padding_left) / W, (2*y_padding) / H, w_pl / W, h_pl / H])
-    ax4.plot(t_l4, l4, 'r', linewidth=2)
-    ax4.set_xlabel('Time [s]')
-    ax4.set_ylabel('Pixel shift')
-    ax4.legend(['Liver Dome Movement'], loc='lower right')
+    if t_l4 is not None and l4 is not None:
+        axs.append(fig.add_axes([(Nx2 + x_padding_left) / W, ((Nplots-2)*y_padding) / H, w_pl / W, h_pl / H]))
+        axs[3].plot(t_l4, l4, 'r', linewidth=2)
+        axs[3].set_xlabel('Time [s]')
+        axs[3].set_ylabel('Pixel shift')
+        axs[3].legend(['Liver Dome Movement'], loc='lower right')
+        axs[3].set_xlim(xlims)
 
     # Add vertical lines at t_step
-    line0 = ax1.axvline(0, color='k', linestyle='--', linewidth=2)
-    line1 = ax2.axvline(0, color='k', linestyle='--', linewidth=2)
-    line2 = ax3.axvline(0, color='k', linestyle='--', linewidth=2)
-    line3 = ax4.axvline(0, color='k', linestyle='--', linewidth=2)
+    line0 = axs[0].axvline(0, color='k', linestyle='--', linewidth=2)
+    line1 = axs[1].axvline(0, color='k', linestyle='--', linewidth=2)
+    line2 = axs[2].axvline(0, color='k', linestyle='--', linewidth=2)
+    if t_l4 is not None and l4 is not None:
+        line3 = axs[3].axvline(0, color='k', linestyle='--', linewidth=2)
+    else:
+        line3 = None
     
     # Adjust font sizes
-    for ax in [ax1, ax2, ax3, ax4]:
+    for ax in axs:
         for item in ([ax.title, ax.xaxis.label, ax.yaxis.label] +
                      ax.get_xticklabels() + ax.get_yticklabels()):
             item.set_fontsize(fs)
+
+    # Add highlights
+    for hl in highlights:
+        axs[0].axvspan(hl['t'][0], hl['t'][1], color=hl['color'], alpha=hl['alpha'])
+        axs[1].axvspan(hl['t'][0], hl['t'][1], color=hl['color'], alpha=hl['alpha'])
     
     return fig, (imgax, line0, line1, line2, line3, line_lp)
 
@@ -97,8 +124,12 @@ def update_mov(frame, img, t_sel, lines, lp):
     lines[1].set_xdata([t_sel[frame]])
     lines[2].set_xdata([t_sel[frame]])
     lines[3].set_xdata([t_sel[frame]])
-    lines[4].set_xdata([t_sel[frame]])
-    return lines
+    if lines[4] is not None:
+        lines[4].set_xdata([t_sel[frame]])
+        return lines
+    else:
+        return (lines[0], lines[1], lines[2], lines[3], lines[5])
+
 
 
 if __name__ == '__main__':
@@ -113,7 +144,17 @@ if __name__ == '__main__':
     # Set video parameters
     framerate = 20
     ecg_sign = -1
-    t_sel = [2, 17]  # [s]
+    crop_to = [120, 120]
+    t_sel = [2, 12]  # [s]
+    do_transpose = True
+    do_flipx = True
+    do_flipy = True
+    # regions to highlight. Format: [{'t': [t1, t2], 'color': 'r', 'alpha': x}, ...] yellow: #FFD700
+    highlights = [
+        {'t': [0.5, 4], 'color': '#808000', 'alpha': 0.4},
+
+    ]
+    show_im_resp = False
     video_name = f'{filepath[:-4]}_{t_sel[0]}s_{t_sel[1]}s.mp4'
 
     if filepath.endswith('.h5') or filepath.endswith('.mrd'):
@@ -122,9 +163,12 @@ if __name__ == '__main__':
         with h5py.File(filepath, 'r') as d:
             dset_names = list(d.keys())
             print(f'File {filepath} contains {len(dset_names)} groups (reconstruction runs):')
-            # print(' ', '\n  '.join(dset_names))
 
-        group = get_selection(dset_names)
+        if len(dset_names) > 1:
+            group = get_selection(dset_names)
+        else:
+            group = dset_names[0]
+
         video_name = f'{filepath[:-4]}_{t_sel[0]}s_{t_sel[1]}s_{group}.mp4'
         wf_list = []
         with ismrmrd.Dataset(filepath, group, False) as dset:
@@ -192,24 +236,35 @@ if __name__ == '__main__':
         time_frame -= time_frame[0]
         # Update frame rate
         framerate = 1/(np.mean(np.diff(time_frame)))
-        imgs = np.flip(np.asarray(imgs), axis=2).transpose((2, 1, 0))
+        imgs = np.asarray(imgs)
+        if do_transpose:
+            imgs = imgs.transpose((2, 1, 0))
+        else:
+            imgs = imgs.transpose((1, 2, 0))
+        if do_flipx:
+            imgs = np.flip(imgs, axis=1)
+        if do_flipy:
+            imgs = np.flip(imgs, axis=0)
 
-        # Image based respiratory
-        resp_imnav = None
-        imresp_timestamp0 = 0
-        for wf in wf_list:
-            if wf.getHead().waveform_id == 1029:
-                resp_imnav = wf.data[0,:]
-                imresp_timestamp0 = wf.time_stamp
-                # time_imresp = 
-        if resp_imnav is None:
-            import respiratory_from_image
+        # Crop images
 
-            time_imresp, resp_imnav, lp = respiratory_from_image.main(filepath, group)
-        
-        resp_imnav = np.asarray(resp_imnav, dtype=float)/2**22
-        resp_imnav = savgol_filter(resp_imnav, 21, 3)
-        # lp = np.array(((imgs.shape[0]-lp[0,0]),()))
+
+        if show_im_resp:
+            # Image based respiratory
+            resp_imnav = None
+            imresp_timestamp0 = 0
+            for wf in wf_list:
+                if wf.getHead().waveform_id == 1029:
+                    resp_imnav = wf.data[0,:]
+                    imresp_timestamp0 = wf.time_stamp
+                    # time_imresp = 
+            if resp_imnav is None:
+                import respiratory_from_image
+
+                time_imresp, resp_imnav, lp = respiratory_from_image.main(filepath, group)
+            
+            resp_imnav = np.asarray(resp_imnav, dtype=float)/2**22
+            resp_imnav = savgol_filter(resp_imnav, 21, 3)
 
         # Time selection
 
@@ -236,13 +291,8 @@ if __name__ == '__main__':
         ecg_waveform = mat_data['ecg_wave'][0]
         resp_waveform = mat_data['recon_params']['respiratory_nav'][0][0][:,0]
         # # Optional cropping
-        # if False:
-        #     I = centered_crop(I, (56, 56, 0, 0))  # You would need to define centered_crop
-
-        # Extract line profile
-        # ll, lp = draw_profile_(I)  # Assume draw_profile_ is defined
-        # l = ll[0]
-        # resp_imnav = extract_nav_from_profile(l)  # Assume extract_nav_from_profile is defined
+        if len(crop_to) > 0:
+            imgs = centered_crop(imgs, crop_to)  # You would need to define centered_crop
 
         # Timeframes
         time_frame = mat_data['recon_params']['t_nav'][0][0].T[7:-7:17]
@@ -265,15 +315,23 @@ if __name__ == '__main__':
 
     Nframes = np.sum(I_sel_I)
     Iv = []
+    if len(crop_to) > 0:
+        imgs = centered_crop(imgs, crop_to)  
 
-
-    fig, lines = prep_1mov4navs_figure2(imgs[:, :, I_sel_I],
+    if show_im_resp:
+        fig, lines = prep_1mov4navs_figure2(imgs[:, :, I_sel_I],
                                 t_sel_l2, cardiac_waveform[I_sel_l2],
                                 t_sel_l1, ecg_waveform[I_sel_l1],
                                 t_sel_l3, -resp_waveform[I_sel_l3] / np.percentile(np.abs(resp_waveform[I_sel_l3]), 99.9),
-                                t_sel_l4, resp_imnav[I_sel_l4])
+                                t_sel_l4, resp_imnav[I_sel_l4], highlights)
                                 # t_sel_l3, -resp_waveform[I_sel_l3] / np.percentile(np.abs(resp_waveform[I_sel_l3]), 99.9))
 
+    else:
+        fig, lines = prep_1mov4navs_figure2(imgs[:, :, I_sel_I],
+                                t_sel_l2, cardiac_waveform[I_sel_l2],
+                                t_sel_l1, ecg_waveform[I_sel_l1],
+                                t_sel_l3, -resp_waveform[I_sel_l3] / np.percentile(np.abs(resp_waveform[I_sel_l3]), 99.9), t_l4=None, l4=None, highlights=highlights)
+    
     ani = animation.FuncAnimation(fig, partial(update_mov, img=imgs[:, :, I_sel_I], t_sel=t_sel_I, lines=lines, lp=np.array([[0,0], [0,0]])), 
                                   frames=range(Nframes), interval=1e3/framerate, blit=True)
     MWriter = animation.FFMpegWriter(fps=framerate)
