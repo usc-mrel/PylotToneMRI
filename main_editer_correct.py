@@ -23,9 +23,9 @@ with open('config.toml', 'r') as cf:
 
 DATA_ROOT = cfg['DATA_ROOT']
 DATA_DIR = cfg['data_folder']
-# raw_file = cfg['raw_file']
 prewhiten = cfg['editer']['prewhiten']
 autoselect = cfg['editer']['autosniffer_select']
+gpu_device = cfg['editer']['gpu_device']
 remove_os = cfg['saving']['remove_os']
 
 filepaths = get_multiple_filepaths(dir=os.path.join(DATA_ROOT, DATA_DIR, 'raw'))
@@ -34,19 +34,6 @@ for ismrmrd_data_fullpath in filepaths:
 
     raw_file = ismrmrd_data_fullpath.split('/')[-1]
     ismrmrd_data_fullpath, ismrmrd_noise_fullpath = mrdhelper.siemens_mrd_finder(DATA_ROOT, DATA_DIR, raw_file)
-    # data_dir_path = os.path.join(DATA_ROOT, DATA_DIR, 'raw/h5')
-    
-    # if raw_file.isnumeric():
-    #     raw_file_ = fnmatch.filter(os.listdir(data_dir_path), f'meas_MID*{raw_file}*.h5')[0]
-    #     ismrmrd_data_fullpath = os.path.join(data_dir_path, raw_file_)
-    #     ismrmrd_noise_fullpath = os.path.join(DATA_ROOT, DATA_DIR, 'raw/noise', f'noise_{raw_file_}')
-    # elif raw_file.startswith('meas_MID'):
-    #     raw_file_ = raw_file
-    #     ismrmrd_data_fullpath = os.path.join(data_dir_path, raw_file)
-    # else:
-    #     print('Could not find the file. Exiting...')
-    #     exit(-1)
-
 
     # %%
     # Read the data in
@@ -163,15 +150,16 @@ for ismrmrd_data_fullpath in filepaths:
 
     f_pt = 24e6 # [Hz]
     f_diff = f0 - f_pt
-
+    n_channels = data.shape[2]
 
     if autoselect:
-        # mri_coils, sensing_coils = autopick_sensing_coils(data, f_emi=f_diff, bw_emi=100e3, bw_sig=200e3, f_samp=1/dt, ratio_th=0.1)
         mri_coils, sensing_coils = autopick_sensing_coils(data, f_emi=f_diff, bw_emi=100e3, bw_sig=200e3, f_samp=1/dt, n_sensing=8)
 
     else:
-        mri_coils = np.arange(15, dtype=int)
-        sensing_coils = np.array([15, 16, 17], dtype=int)
+        sensing_coils = np.array(cfg['pilottone']['sensing_coils'], dtype=int)
+        mri_coils = np.arange(n_channels)
+        mri_coils = mri_coils[~np.isin(mri_coils, sensing_coils)]
+
 
     print(f"Coils to be used as sniffers: {coil_name[sensing_coils.astype(int)]}")
 
@@ -182,7 +170,6 @@ for ismrmrd_data_fullpath in filepaths:
     # %%
     ## PCA sniffer coils before weighting and subtracting from k-space to "denoise" them. Compare SNR with and without.
 
-    # from scipy.linalg import svd
     U, S, V = svds(ksp_sniffer.reshape((ksp_sniffer.shape[0]*ksp_sniffer.shape[1], -1)), k=1)
     ksp_sniffer2 = (U@np.diag(S))@V
     ksp_sniffer2 = ksp_sniffer2.reshape((ksp_sniffer.shape[0], ksp_sniffer.shape[1], ksp_sniffer.shape[2]))
@@ -208,8 +195,8 @@ for ismrmrd_data_fullpath in filepaths:
     editer_params = {
         'grouping_method': "uniform",  # "uniform", "corr_orig"
         'max_lines_per_group': n_pe,   # Max number of lines in a group
-        'dk': dk,                     # Convolution kernel size in kx and ky directions
-        'gpu': 0,                  # Use GPU acceleration
+        'dk': dk,                      # Convolution kernel size in kx and ky directions
+        'gpu': gpu_device,             # Use GPU acceleration
     }
 
     chs = range(ksp_measured.shape[2])
@@ -242,11 +229,9 @@ for ismrmrd_data_fullpath in filepaths:
 
         keepOS = np.concatenate([np.arange(n_samp // 4), np.arange(n_samp * 3 // 4, n_samp)])
         ifft_ = pyfftw.builders.ifft(ksp_emicorr, n=n_samp, axis=0, threads=32, planner_effort='FFTW_ESTIMATE')
-        # ksp_emicorr = ifft(ksp_emicorr, axis=0)
         ksp_emicorr = ifft_()
 
         fft_ = pyfftw.builders.fft(ksp_emicorr[keepOS, :, :], n=n_samp//2, axis=0, threads=32, planner_effort='FFTW_ESTIMATE')
-        # ksp_emicorr = fft(ksp_emicorr[keepOS, :, :], axis=0)
         ksp_emicorr = fft_()
         n_samp = n_samp // 2
 

@@ -1,4 +1,3 @@
-import wave
 from numpy.fft import ifft, fft
 from scipy.signal.windows import tukey
 from scipy.linalg import lstsq
@@ -268,9 +267,7 @@ def extract_pilottone_navs(pt_sig, f_samp: float, params: dict):
     # ================================================================
     (accept_list, sign_list, corrs) = pickcoilsbycorr(pt_respiratory_freqs, params['respiratory']['corr_init_ch'], params['respiratory']['corr_threshold'])
     accept_list = np.sort(accept_list)
-    ch_list = np.arange(n_ch)
-    deny_list = ch_list[accept_list[np.searchsorted(accept_list,ch_list)] !=  ch_list]
-    
+
     if params['respiratory']['separation_method'] == 'pca':
         # ================================================================
         # Apply PCA along coils to extract common signal (hopefuly resp)
