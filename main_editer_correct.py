@@ -148,7 +148,7 @@ for ismrmrd_data_fullpath in filepaths:
 
     # TEST auto coil selection
 
-    f_pt = 24e6 # [Hz]
+    f_pt = cfg['editer']['interference_freq'] # [Hz]
     f_diff = f0 - f_pt
     n_channels = data.shape[2]
 
