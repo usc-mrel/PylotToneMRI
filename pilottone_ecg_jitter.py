@@ -202,11 +202,11 @@ def calculate_jitter(time_pt, pt_cardiac, time_ecg, ecg_waveform, pt_cardiac_tri
     return peak_diff, miss_pks, extra_pks
 
 def print_pt_confusion_table(pt_stats, raw_files, title='Pilot Tone Confusion Table'):
-    print('| {:^40} |'.format(title))
-    print('| {:^10} | {:>15} | {:>15} |'.format('PT Voltage', 'False Negative', 'False Positive'))
+    print('| {:^70} |'.format(title))
+    print('| {:^10} | {:>15} | {:>15} | {:>15} |'.format('PT Voltage', 'Number of ECG triggers', 'False Negative', 'False Positive'))
     for raw_file in raw_files:
-        row = [pt_stats[raw_file][0], len(pt_stats[raw_file][2]), len(pt_stats[raw_file][3])]
-        print('| {:^10} | {:>15} | {:>15} |'.format(*row))
+        row = [pt_stats[raw_file][0], len(pt_stats[raw_file][1]), len(pt_stats[raw_file][2]), len(pt_stats[raw_file][3])]
+        print('| {:^10} | {:>20} | {:>15} | {:>15} |'.format(*row))
 
 if __name__ == '__main__':
 
@@ -219,7 +219,10 @@ if __name__ == '__main__':
 
     DATA_ROOT = cfg['DATA_ROOT']
     DATA_DIR = cfg['data_folder']
-    raw_files = ['282', '283', '284', '285', '286', '287', '289', '290', '291', '292']
+    # raw_files = ['282', '283', '284', '285', '286', '287', '289', '290', '291', '292']
+    raw_files = ['286', '288', '290', '292', '294', '296', '298', '300', '302', '304', '318', '320', '322']
+    # raw_files = ['547']
+
     pt_stats = {}
     dpt_stats = {}
 
@@ -239,7 +242,7 @@ if __name__ == '__main__':
         pt_cardiac = pt_['pt_cardiac']
         pt_cardiac_derivative = pt_['pt_cardiac_derivative']
         pt_cardiac -= np.percentile(pt_cardiac, 5)
-        pt_cardiac /= np.percentile(pt_cardiac, 99)
+        pt_cardiac /= np.percentile(pt_cardiac, 96)
         pt_cardiac_derivative -= np.percentile(pt_cardiac_derivative, 5)
         pt_cardiac_derivative /= np.percentile(pt_cardiac_derivative, 99)
 
@@ -252,7 +255,7 @@ if __name__ == '__main__':
 
         pt_stats_ = calculate_jitter(time_pt, pt_cardiac, time_ecg, ecg_waveform, ecg_trigs=ecg_trigs, 
                                     #  pt_cardiac_trigs=pt_cardiac_trigs, 
-                                     skip_time=0.8, peak_prominence=0.5)
+                                     skip_time=0.8, peak_prominence=0.4)
         dpt_stats_ = calculate_jitter(time_pt, pt_cardiac_derivative, time_ecg, ecg_waveform, ecg_trigs=ecg_trigs, 
                                     #   pt_cardiac_trigs=pt_derivative_trigs, 
                                       skip_time=0.8, peak_prominence=0.5)
@@ -300,4 +303,4 @@ if __name__ == '__main__':
     plt.show()
 
     np.savez_compressed(os.path.join('output_recons', DATA_DIR, f'jitter_{datetime.datetime.now()}.npz'), 
-                        ptvolts=ptvolts, pk_diffs=pt_stats, derivative_pk_diffs=dpt_stats)
+                        ptvolts=ptvolts, pk_diffs=pt_stats, derivative_pk_diffs=dpt_stats, pt_sampling_time=pt_['pt_sampling_time'])
