@@ -1,10 +1,10 @@
 # %%
+import argparse
 import ismrmrd
 import rtoml
 import os
 from scipy.io import loadmat
 import numpy as np
-import matplotlib.pyplot as plt
 import pyfftw
 from pathlib import Path
 import copy
@@ -14,27 +14,26 @@ from scipy.sparse.linalg import svds
 import time
 import multiprocessing as mp
 import mrdhelper
-from pilottone.signal import to_hybrid_kspace
 from ui.selectionui import get_multiple_filepaths
 
-# Read config
-with open('config.toml', 'r') as cf:
-    cfg = rtoml.load(cf)
+def process_channel(ch):
+    est_emi_ch, _ = apply_editer(ksp_measured[:, :, ch], ksp_sniffer2, editer_params, w)
+    return est_emi_ch
 
-DATA_ROOT = cfg['DATA_ROOT']
-DATA_DIR = cfg['data_folder']
-prewhiten = cfg['editer']['prewhiten']
-autoselect = cfg['editer']['autosniffer_select']
-gpu_device = cfg['editer']['gpu_device']
-remove_os = cfg['saving']['remove_os']
-
-filepaths = get_multiple_filepaths(dir=os.path.join(DATA_ROOT, DATA_DIR, 'raw'))
-
-for ismrmrd_data_fullpath in filepaths:
-
+def main(ismrmrd_data_fullpath, cfg) -> str:
+    DATA_ROOT = cfg['DATA_ROOT']
+    DATA_DIR = cfg['data_folder']
+    prewhiten = cfg['editer']['prewhiten']
+    autoselect = cfg['editer']['autosniffer_select']
+    gpu_device = cfg['editer']['gpu_device']
+    remove_os = cfg['saving']['remove_os']
     raw_file = ismrmrd_data_fullpath.split('/')[-1]
     ismrmrd_data_fullpath, ismrmrd_noise_fullpath = mrdhelper.siemens_mrd_finder(DATA_ROOT, DATA_DIR, raw_file)
 
+    # We are making these global to avoid passing them to the multiprocessing pool
+    # otherwise they get copied to each process and it takes a long time and lots of memory.
+    # It is an ugly hack, but keeps the code much simpler.
+    global ksp_measured, ksp_sniffer2, editer_params, w
     # %%
     # Read the data in
     print(f'Reading {ismrmrd_data_fullpath}...')
@@ -69,7 +68,6 @@ for ismrmrd_data_fullpath in filepaths:
     dt = float(traj['param']['dt'])
     msize = int(10 * traj['param']['fov'] / traj['param']['spatial_resolution'])
     pre_discard = int(traj['param']['pre_discard'])
-    w = traj['w']
 
     # Convert raw data and trajectory into convenient arrays
     ktraj = np.stack((kx, -ky), axis=2)
@@ -80,7 +78,6 @@ for ismrmrd_data_fullpath in filepaths:
     ktraj = 0.5 * (ktraj / kmax) * msize
 
     data = [arm.data[:,:] for arm in acq_list]
-    dcf = np.tile(w[None, :], (n_acq, 1))
     coord = [ktraj[ii%n_unique_angles,:,:] for ii in range(n_acq)]
 
     data = np.array(data)
@@ -113,15 +110,7 @@ for ismrmrd_data_fullpath in filepaths:
 
         print('Prewhitening the raw data...')
         dmtx = calculate_prewhitening(noise)
-
         data = apply_prewhitening(np.transpose(data, (2,0,1)), dmtx).transpose((1,2,0))
-
-        dmtx2 = calculate_prewhitening(apply_prewhitening(noise, dmtx))
-
-        _,axs = plt.subplots(1,2)
-        axs[0].imshow(np.abs(dmtx))
-        axs[1].imshow(np.abs(dmtx2))
-        # plt.show()
 
 
     # %%
@@ -135,13 +124,7 @@ for ismrmrd_data_fullpath in filepaths:
 
 
     f0 = hdr.experimentalConditions.H1resonanceFrequency_Hz
-    df = 1/(dt*data.shape[0])
 
-    t_acq_start = acq_list[0].acquisition_time_stamp*2.5e-3 # [2.5ms] -> [s]
-    t_acq_end = acq_list[-1].acquisition_time_stamp*2.5e-3
-    time_acq = np.linspace(t_acq_start, t_acq_end, n_acq) # Interpolate for TR, as TR will not be a multiple of time resolution.
-    time_pt = time_acq - t_acq_start
-    samp_time_pt = time_acq[1] - time_acq[0]
 
     ksp_window = tukey(data.shape[0]*2, 0.01)
     ksp_window = ksp_window[data.shape[0]:, None, None]
@@ -173,11 +156,6 @@ for ismrmrd_data_fullpath in filepaths:
     U, S, V = svds(ksp_sniffer.reshape((ksp_sniffer.shape[0]*ksp_sniffer.shape[1], -1)), k=1)
     ksp_sniffer2 = (U@np.diag(S))@V
     ksp_sniffer2 = ksp_sniffer2.reshape((ksp_sniffer.shape[0], ksp_sniffer.shape[1], ksp_sniffer.shape[2]))
-    plt.figure()
-    plt.plot(np.sort(S), "*")
-    plt.figure()
-    plt.plot(np.abs(ksp_measured[:,0,0].squeeze()))
-    plt.plot(np.abs(ksp_sniffer2[:,0,0].squeeze()))
 
     # %%
 
@@ -201,9 +179,7 @@ for ismrmrd_data_fullpath in filepaths:
 
     chs = range(ksp_measured.shape[2])
 
-    def process_channel(ch):
-        est_emi_ch, _ = apply_editer(ksp_measured[:, :, ch], ksp_sniffer2, editer_params, w)
-        return est_emi_ch
+
 
     with mp.Pool(processes=len(chs)//2) as pool:
         results = pool.map(process_channel, chs)
@@ -212,11 +188,6 @@ for ismrmrd_data_fullpath in filepaths:
     ksp_emicorr = ksp_measured - emi_hat
 
     print(f"Elapsed time: {time.time() - start_time} seconds")
-
-    plt.figure()
-    plt.plot(np.abs(to_hybrid_kspace(ksp_measured[pre_discard:,0,0])))
-    plt.plot(np.abs(to_hybrid_kspace(ksp_emicorr[pre_discard:,0,0])))
-
 
     # %% [markdown]
     # # Create a new MRD dataset, use the original as a template, and write corrected k-space into it.
@@ -273,6 +244,28 @@ for ismrmrd_data_fullpath in filepaths:
             new_dset.append_waveform(wave_)
 
         new_dset.write_xml_header(ismrmrd.xsd.ToXML(new_hdr))
+    
+    return output_data_fullpath
 
+        
+if __name__ == '__main__':
+    # Read config
+    with open('config.toml', 'r') as cf:
+        cfg = rtoml.load(cf)
 
+    # Check if filepaths are provided as arguments
+    argparser = argparse.ArgumentParser()
+    argparser.add_argument('-f', '--filepaths', nargs='+', help='List of filepaths to process')
 
+    args = argparser.parse_args()
+
+    if args.filepaths:
+        filepaths = args.filepaths
+        print(f'Processing {len(filepaths)} files.')
+        print(filepaths)
+    else:
+        # Get filepaths if not provided
+        filepaths = get_multiple_filepaths(dir=os.path.join(cfg['DATA_ROOT'], cfg['data_folder'], 'raw'))
+
+    for ismrmrd_data_fullpath in filepaths:
+        main(ismrmrd_data_fullpath, cfg)

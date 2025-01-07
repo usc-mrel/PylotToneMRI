@@ -1,6 +1,7 @@
 # %%
 # # Setup the reconstruction
 
+import argparse
 import datetime
 import os
 from pathlib import Path
@@ -12,21 +13,12 @@ import rtoml
 
 from reconstruction import client
 
-# Read config
-with open('config.toml', 'r') as cf:
-    cfg = rtoml.load(cf)
-
-DATA_ROOT   = cfg['DATA_ROOT']
-DATA_DIR    = cfg['data_folder']
-filepaths = get_multiple_filepaths(dir=os.path.join(DATA_ROOT, DATA_DIR, 'raw'))
-
-recon_method    = cfg['reconstruction']['recon_type']
-server_port     = cfg['reconstruction']['server_port']
-show_images     = cfg['reconstruction']['show_images']
-output_folder   = cfg['reconstruction']['output_folder']
-
-for ismrmrd_data_fullpath in filepaths:
-
+def main(ismrmrd_data_fullpath, cfg):
+    DATA_DIR    = cfg['data_folder']
+    recon_method    = cfg['reconstruction']['recon_type']
+    server_port     = cfg['reconstruction']['server_port']
+    show_images     = cfg['reconstruction']['show_images']
+    output_folder   = cfg['reconstruction']['output_folder']
     raw_file_ = ismrmrd_data_fullpath.split('/')[-1]
 
     # Mapping from recon method to config file name for the server
@@ -112,4 +104,24 @@ for ismrmrd_data_fullpath in filepaths:
         s.plot(navigator='spectrum', colorbar=False, axes_ticks=False)
         plt.show()
 
+if __name__ == '__main__':
+    # Read config
+    with open('config.toml', 'r') as cf:
+        cfg = rtoml.load(cf)
 
+    # Check if filepaths are provided as arguments
+    argparser = argparse.ArgumentParser()
+    argparser.add_argument('-f', '--filepaths', nargs='+', help='List of filepaths to process')
+
+    args = argparser.parse_args()
+
+    if args.filepaths:
+        filepaths = args.filepaths
+        print(f'Processing {len(filepaths)} files.')
+        print(filepaths)
+    else:
+        # Get filepaths if not provided
+        filepaths = get_multiple_filepaths(dir=os.path.join(cfg['DATA_ROOT'], cfg['data_folder'], 'raw'))
+
+    for ismrmrd_data_fullpath in filepaths:
+        main(ismrmrd_data_fullpath, cfg)

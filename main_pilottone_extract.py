@@ -1,4 +1,5 @@
 # %%
+import argparse
 import ismrmrd
 import rtoml
 import os
@@ -7,6 +8,7 @@ from scipy.signal.windows import tukey
 from scipy.signal import savgol_filter
 import numpy as np
 from numpy.fft import ifftshift
+from typing import Union
 import mrdhelper
 import ctypes
 from constants import PILOTTONE_WAVEFORM_ID
@@ -16,22 +18,14 @@ from pilottone.pt import extract_triggers
 from pilottone_ecg_jitter import pt_ecg_jitter
 from ui.selectionui import get_multiple_filepaths
 
-# Read config
-with open('config.toml', 'r') as cf:
-    cfg = rtoml.load(cf)
-
-DATA_ROOT = cfg['DATA_ROOT']
-DATA_DIR = cfg['data_folder']
-remove_os = cfg['saving']['remove_os']
-f_pt = cfg['pilottone']['pt_freq']
-
-filepaths = get_multiple_filepaths(dir=os.path.join(DATA_ROOT, DATA_DIR, 'raw'))
-
-
 # %%
 # Read the data in
 
-for ismrmrd_data_fullpath in filepaths:
+def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
+    f_pt = cfg['pilottone']['pt_freq']
+    remove_os = cfg['saving']['remove_os']
+    DATA_ROOT = cfg['DATA_ROOT']
+    DATA_DIR = cfg['data_folder']
 
     raw_file = ismrmrd_data_fullpath.split('/')[-1]
     ismrmrd_data_fullpath, ismrmrd_noise_fullpath = mrdhelper.siemens_mrd_finder(DATA_ROOT, DATA_DIR, raw_file)
@@ -67,7 +61,6 @@ for ismrmrd_data_fullpath in filepaths:
     dt = float(traj['param']['dt'])
     msize = int(10 * traj['param']['fov'] / traj['param']['spatial_resolution'])
     pre_discard = int(traj['param']['pre_discard'])
-    w = traj['w']
 
     # Convert raw data and trajectory into convenient arrays
     ktraj = np.stack((kx, -ky), axis=2)
@@ -78,7 +71,6 @@ for ismrmrd_data_fullpath in filepaths:
     ktraj = 0.5 * (ktraj / kmax) * msize
 
     data = [arm.data[:,:] for arm in acq_list]
-    dcf = np.tile(w[None, :], (n_acq, 1))
     coord = [ktraj[ii%n_unique_angles,:,:] for ii in range(n_acq)]
 
     data = np.array(data)
@@ -166,13 +158,6 @@ for ismrmrd_data_fullpath in filepaths:
     pt_sig_fit = np.abs(pt_sig_fit)
     pt_sig_fit_sniffer = np.abs(pt_sig_fit_sniffer)
     pt_sig = np.squeeze(pt_sig_fit - np.mean(pt_sig_fit, axis=1, keepdims=True))
-    pt_sig_sniffer = np.squeeze(pt_sig_fit_sniffer - np.mean(pt_sig_fit_sniffer, axis=1, keepdims=True))
-
-    # plt.figure()
-    # plt.plot(np.abs(pt.signal.to_hybrid_kspace(ksp_measured_[:,10,0])))
-    # plt.plot(np.abs(pt.signal.to_hybrid_kspace(ksp_ptsubbed_[:,10,0])))
-    # plt.show()
-
 
     # Filter a bandwidth around the pilot tone frequency.
     fbw = 100e3
@@ -192,9 +177,6 @@ for ismrmrd_data_fullpath in filepaths:
     # plt.show()
 
     pt_sig_clean2 = pt.signal.angle_dependant_filtering(pt_sig, n_unique_angles)
-    pt_sig_sniffer_clean2 = pt.signal.angle_dependant_filtering(pt_sig_sniffer, n_unique_angles)
-
-    # pt.plot_multich_comparison(time_pt, (pt_sig_sniffer, pt_sig_sniffer_clean2), coil_name[sensing_coils], ('Sniffer PT','Sniffer PT angle dep filt'))
 
     # %% [markdown]
     # ## QA and ECG PT Jitter
@@ -310,8 +292,6 @@ for ismrmrd_data_fullpath in filepaths:
 
             ksp_ptsubbed = apply_prewhitening(np.transpose(ksp_ptsubbed, (2,0,1)), dmtx).transpose((1,2,0))
 
-            dmtx2 = calculate_prewhitening(apply_prewhitening(noise, dmtx))
-
         if cfg['pilottone']['discard_badcoils']:
             mri_coils2, _ = autopick_sensing_coils(ksp_measured, f_emi=f_diff, bw_emi=100e3, bw_sig=200e3, f_samp=1/dt, n_sensing=5)
             ksp_ptsubbed = ksp_ptsubbed[:,:,mri_coils2]
@@ -367,5 +347,26 @@ for ismrmrd_data_fullpath in filepaths:
                 new_dset.append_waveform(pt_wf)
 
             new_dset.write_xml_header(ismrmrd.xsd.ToXML(new_hdr))
+        return output_data_fullpath
 
+if __name__ == '__main__':
+    # Read config
+    with open('config.toml', 'r') as cf:
+        cfg = rtoml.load(cf)
 
+    # Check if filepaths are provided as arguments
+    argparser = argparse.ArgumentParser()
+    argparser.add_argument('-f', '--filepaths', nargs='+', help='List of filepaths to process')
+
+    args = argparser.parse_args()
+
+    if args.filepaths:
+        filepaths = args.filepaths
+        print(f'Processing {len(filepaths)} files.')
+        print(filepaths)
+    else:
+        # Get filepaths if not provided
+        filepaths = get_multiple_filepaths(dir=os.path.join(cfg['DATA_ROOT'], cfg['data_folder'], 'raw'))
+
+    for ismrmrd_data_fullpath in filepaths:
+        main(ismrmrd_data_fullpath, cfg)
