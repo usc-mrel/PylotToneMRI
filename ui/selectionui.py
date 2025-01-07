@@ -1,26 +1,8 @@
-from PySide2.QtWidgets import QApplication, QWidget, QVBoxLayout, QListWidget, QPushButton, QFileDialog
+try:
+    from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QListWidget, QPushButton, QFileDialog
+except ImportError: # Fallback to PySide2 in case conda is used.
+    from PySide2.QtWidgets import QApplication, QWidget, QVBoxLayout, QListWidget, QPushButton, QFileDialog # type: ignore
 import sys
-
-def selection_ui(dsetNames: list[str]) -> str:
-    ''' Tkinter based selection UI.
-    '''
-    import tkinter as tk
-
-    root = tk.Tk()
-    var = tk.IntVar()
-    root.title("Select a group from the dataset.")
-    lb = tk.Listbox(root, selectmode=tk.SINGLE, height = len(dsetNames), width = 50) # create Listbox
-    for x in dsetNames: lb.insert(tk.END, x)
-    lb.pack() # put listbox on window
-    lb.select_set(len(dsetNames)-1)
-    btn = tk.Button(root,text="Select Group",command=lambda: var.set(1))
-    btn.pack()
-    # root.mainloop()
-    btn.wait_variable(var)
-    group = lb.get(lb.curselection()[0])
-    root.destroy()
-    return group
-
 
 class SelectionWindow(QWidget):
     def __init__(self, selection_list):

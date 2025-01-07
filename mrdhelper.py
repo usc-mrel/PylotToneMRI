@@ -74,7 +74,7 @@ def read_waveforms(filepath: str, dataset_name: str = 'dataset') -> list[ismrmrd
 
     return waveform_list, xml_header
 
-def waveforms_asarray(waveform_list: list[ismrmrd.Waveform]) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
+def waveforms_asarray(waveform_list: list[ismrmrd.Waveform], ecg_channel: int=0) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
     '''Converts a list of waveforms to numpy arrays for ECG and PT.
         Parameters
         ----------
@@ -95,7 +95,7 @@ def waveforms_asarray(waveform_list: list[ismrmrd.Waveform]) -> tuple[dict[str, 
     pt_init_timestamp = 0
     for wf in waveform_list:
         if wf.getHead().waveform_id == ECG_WAVEFORM_ID:
-            ecg_waveform.append(wf.data[0,:])
+            ecg_waveform.append(wf.data[ecg_channel,:])
             ecg_trigs.append(wf.data[4,:])
             if ecg_init_timestamp == 0:
                 ecg_init_timestamp = wf.time_stamp

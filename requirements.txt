@@ -1,0 +1,11 @@
+ismrmrd
+matplotlib     # used by rgb.py and provides various visualization tools including colormaps
+numpy
+pyside2       # For UI in respiratory_from_image.py
+ipykernel
+pandas
+pyfftw
+hyperspy
+rtoml
+pip
+cupy-cuda12x # For GPU acceleration at EDITER processing.

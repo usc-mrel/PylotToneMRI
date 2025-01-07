@@ -156,7 +156,7 @@ for ismrmrd_data_fullpath in filepaths:
         mri_coils, sensing_coils = autopick_sensing_coils(data, f_emi=f_diff, bw_emi=100e3, bw_sig=200e3, f_samp=1/dt, n_sensing=8)
 
     else:
-        sensing_coils = np.array(cfg['pilottone']['sensing_coils'], dtype=int)
+        sensing_coils = np.array(cfg['editer']['sensing_coils'], dtype=int)
         mri_coils = np.arange(n_channels)
         mri_coils = mri_coils[~np.isin(mri_coils, sensing_coils)]
 

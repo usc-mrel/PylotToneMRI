@@ -175,8 +175,10 @@ def apply_editer(signal_in: npt.NDArray[np.complex64], sniffer: npt.NDArray[np.c
             line_grps.append(np.arange(((grp_i)*max_lines), min(max_lines*(grp_i+1), nlin)))
 
 
-    # emi_hat, kernels = est_emi(signal_in, sniffer, line_grps, params['dk'], w)
-    with cp.cuda.Device(2):
-        emi_hat, kernels = est_emi_gpu(signal_in, sniffer, line_grps, params['dk'], w)
+    if params['gpu'] == -1:
+        emi_hat, kernels = est_emi(signal_in, sniffer, line_grps, params['dk'], w)
+    else:
+        with cp.cuda.Device(params['gpu']):
+            emi_hat, kernels = est_emi_gpu(signal_in, sniffer, line_grps, params['dk'], w)
     return emi_hat, kernels
     
