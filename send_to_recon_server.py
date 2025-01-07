@@ -39,6 +39,7 @@ def main(ismrmrd_data_fullpath, cfg):
     # %%
     # Run reconstruction
 
+    print(f'Running reconstruction for {ismrmrd_data_fullpath} using {recon_method} reconstruction method.')
     Path(output_folder, DATA_DIR).mkdir(exist_ok=True, parents=True)
     outfilename = os.path.join(output_folder, DATA_DIR, f'{recon_method}_{raw_file_[:-3]}.mrd')
 
