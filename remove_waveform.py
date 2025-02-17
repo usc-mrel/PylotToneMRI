@@ -2,13 +2,13 @@
 Remove waveform by its ID from an ISMRMRD dataset. Especially useful when we want to replace custom waveforms.
 Author: Bilal Tasdelen
 """
-import rtoml
 import os
-import fnmatch
 import h5py
 import numpy as np
 import subprocess
 import argparse
+from ui.selectionui import get_filepath
+from PySide6.QtCore import QDir
 
 parser = argparse.ArgumentParser(description='Remove waveform by its ID from an ISMRMRD dataset. Especially useful when we want to replace custom waveforms.')
 parser.add_argument('waveform_id', nargs='?', help='Waveform ID. Default is 1025.', default=1025, type=int)
@@ -17,22 +17,12 @@ args = parser.parse_args()
 repack_file = args.repack
 waveform_id = args.waveform_id
 
-with open('config.toml') as cf:
-    cfg = rtoml.load(cf)
-    DATA_ROOT = cfg['DATA_ROOT']
-    DATA_DIR = cfg['data_folder']
-    raw_file = cfg['raw_file']
-
-data_dir_path = os.path.join(DATA_ROOT, DATA_DIR, 'raw/h5')
-if raw_file.isnumeric():
-    raw_file_ = fnmatch.filter(os.listdir(data_dir_path), f'meas_MID*{raw_file}*.h5')[0]
-    ismrmrd_data_fullpath = os.path.join(data_dir_path, raw_file_)
-elif raw_file.startswith('meas_MID'):
-    raw_file_ = raw_file
-    ismrmrd_data_fullpath = os.path.join(data_dir_path, raw_file)
-else:
-    print('Could not find the file. Exiting...')
-    exit(-1)
+ismrmrd_data_fullpath = get_filepath(dir=QDir.homePath())
+print(f'File selected: {ismrmrd_data_fullpath}')
+raw_file_ = os.path.basename(ismrmrd_data_fullpath)
+print(f'Raw file: {raw_file_}')
+data_dir_path = os.path.dirname(ismrmrd_data_fullpath)
+print(f'Data directory path: {data_dir_path}')
 
 with h5py.File(ismrmrd_data_fullpath, 'a') as f:
     wfs = f['/dataset/waveforms']
