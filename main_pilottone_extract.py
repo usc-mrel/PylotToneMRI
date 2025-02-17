@@ -185,26 +185,27 @@ def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
 
     f_samp = 1/samp_time_pt # [Hz]
 
-    pt_extract_params = {'golay_filter_len': 91,
+    pt_extract_params = {'golay_filter_len': 81,
                         'respiratory': {
                                 'freq_start': 0.05,
                                 'freq_stop': 0.9,
                                 'corr_threshold': 0.9,
                                 'corr_init_ch': -1,
-                                'separation_method': 'sobi', # 'sobi', 'pca'
+                                'separation_method': 'pca', # 'sobi', 'pca'
                         },
                         'cardiac': {
                                     'freq_start': 1,
-                                    'freq_stop': 20,
-                                    'corr_threshold': 0.90,
-                                    'corr_init_ch': np.nonzero(coil_name == 'Spine_18:1:S3S')[0][0],                           
+                                    'freq_stop': 30,
+                                    'corr_threshold': 0.85,
+                                    'corr_init_ch': np.nonzero(coil_name == 'Body_6:1:B22')[0][0],                           
                                     'separation_method': 'pca', # 'sobi', 'pca'
 
                         },
                         'debug': {
                             'selected_coils': [0,1],
                             'coil_legend': coil_name[mri_coils],
-                            'show_plots': False
+                            'show_plots': False,
+                            'no_normalize': True,
                         }
                     }
 
@@ -212,7 +213,16 @@ def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
 
     pt_respiratory, pt_cardiac = pt.extract_pilottone_navs(pt_sig_clean2, f_samp, pt_extract_params)
     
-    pt_cardiac = -pt_cardiac
+    # %% Save the waveforms separately if requested
+
+    if cfg['saving']['save_pt_separate']:
+        print('Saving waveforms separately...')
+        np.savez(os.path.join(DATA_ROOT, DATA_DIR, f"{ismrmrd_data_fullpath.split('/')[-1][:-3]}_ptwaveforms.npz"), 
+                 pt_respiratory=pt_respiratory, 
+                 pt_cardiac=pt_cardiac,
+                 time_pt=time_pt)
+
+    # pt_cardiac = -pt_cardiac
     pt_cardiac[:20] = pt_cardiac[20]
     pt_cardiac -= np.percentile(pt_cardiac, 5)
     pt_cardiac /= np.percentile(pt_cardiac, 99)
@@ -232,10 +242,9 @@ def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
                         pt_cardiac_trigs=pt_cardiac_trigs, pt_derivative_trigs=pt_derivative_trigs, ecg_trigs=ecg_trigs, 
                         skip_time=0.6, show_outputs=False)
 
+
     # %% [markdown]
     # ## Save the waveforms into the original data
-
-    # %%
     if cfg['saving']['save_pt_waveforms']:
         # Concat, and normalize pt waveforms.
         dt_pt = (time_pt[1] - time_pt[0])
@@ -255,8 +264,6 @@ def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
 
     # %% [markdown]
     # # Save the PT subtracted k-space
-
-    # %%
 
     if cfg['saving']['save_model_subtracted']:
         from pathlib import Path

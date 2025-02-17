@@ -3,6 +3,7 @@ matplotlib     # used by rgb.py and provides various visualization tools includi
 numpy
 pyside2       # For UI in respiratory_from_image.py
 ipykernel
+ipympl
 pandas
 pyfftw
 hyperspy

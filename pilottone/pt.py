@@ -11,7 +11,7 @@ import pyfftw
 import math
 import matplotlib.pyplot as plt
 import re
-import time
+# import time
 
 def calc_fovshift_phase(kx, ky, acq):
     gbar = 42.576e6
@@ -65,12 +65,12 @@ def find_freq_qifft(data, df, f_center, f_radius, os, ave_dim):
     dfint = df / os
     data = pyfftw.byte_align(data.transpose(2,1,0))
 
-    start_time = time.time()
+    # start_time = time.time()
     fft = pyfftw.builders.ifft(data, n=Nsamp*os, axis=2, threads=64, planner_effort='FFTW_ESTIMATE')
     data_f = np.fft.ifftshift(fft(), axes=2)
     data_f = data_f.transpose((2, 1 ,0))
-    end_time = time.time()
-    print(end_time-start_time)
+    # end_time = time.time()
+    # print(end_time-start_time)
     # data_f = np.fft.ifftshift(pyfftw.interfaces.numpy_fft.ifft(data, Nsamp*os, axis=0), axes=0)
     # data_f = np.fft.ifftshift(np.fft.ifft(data, Nsamp * os, axis=0), axes=0)
     data_f = np.abs(data_f)
@@ -248,8 +248,8 @@ def extract_pilottone_navs(pt_sig, f_samp: float, params: dict):
     # ================================================================
     # Filter out higher than resp frequency ~1 Hz
     # ================================================================ 
-    df = f_samp/n_pt_samp/2
-    f_filt = np.arange(0, f_samp, df) - (f_samp - (n_pt_samp % 2)*df)/2 # Handles both even and odd length signals.
+    # df = f_samp/n_pt_samp/2
+    # f_filt = np.arange(0, f_samp, df) - (f_samp - (n_pt_samp % 2)*df)/2 # Handles both even and odd length signals.
 
     if params['respiratory']['freq_start'] is None:
         filt_bp_resp = designlp_tukeyfilt_freq(params['respiratory']['freq_stop'], f_samp, n_pt_samp)
@@ -328,28 +328,19 @@ def extract_pilottone_navs(pt_sig, f_samp: float, params: dict):
 
     # Normalize navs before returning.
     # Here, I am using prctile instead of the max to avoid weird spikes.
-    # pt_cardiac -= np.percentile(pt_cardiac, 5)
-    # pt_cardiac = pt_cardiac/np.percentile(pt_cardiac, 99)
-    pt_respiratory = pt_respiratory/np.percentile(pt_respiratory, 99)
+    if not params['debug']['no_normalize']:
+        pt_respiratory = pt_respiratory - np.percentile(pt_respiratory, 5)
+        pt_respiratory = pt_respiratory/np.percentile(pt_respiratory, 99)
 
 
-    # Check if the waveform is flipped and flip if necessary.
-    # Logic is, peaks looking up should be narrower than the bottom side for better triggering.
-    ptc_sign = check_waveform_polarity(pt_cardiac[40:], prominence=0.5)
-    pt_cardiac = ptc_sign*pt_cardiac
-
-    # p1, d1 = find_peaks(pt_cardiac[time_pt > 0.6], prominence=0.5)
-    # w1,_,_,_ = peak_widths(pt_cardiac[time_pt > 0.6], p1)
-    # p2, d2 = find_peaks(-pt_cardiac[time_pt > 0.6], prominence=0.5)
-    # w2,_,_,_ = peak_widths(-pt_cardiac[time_pt > 0.6], p2)
-
-    # if np.sum(w1) > np.sum(w2):
-    #     print('Cardiac waveform looks flipped. Flipping it..')
-    #     pt_cardiac = -pt_cardiac
-    
-    # Shift the base and normalize again to make it mostly 0 to 1
-    pt_cardiac -= np.percentile(pt_cardiac, 5)
-    pt_cardiac = pt_cardiac/np.percentile(pt_cardiac, 99)
+        # Check if the waveform is flipped and flip if necessary.
+        # Logic is, peaks looking up should be narrower than the bottom side for better triggering.
+        ptc_sign = check_waveform_polarity(pt_cardiac[40:], prominence=0.5)
+        pt_cardiac = ptc_sign*pt_cardiac
+        
+        # Shift the base and normalize again to make it mostly 0 to 1
+        pt_cardiac -= np.percentile(pt_cardiac, 5)
+        pt_cardiac = pt_cardiac/np.percentile(pt_cardiac, 99)
 
     return pt_respiratory, pt_cardiac
 

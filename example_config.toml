@@ -14,14 +14,20 @@ output_folder   = "output_recons"
 
 # EDITER control
 [editer]
-prewhiten = true
-autosniffer_select = true
+prewhiten           = true
+autosniffer_select  = false
+sensing_coils       = [1, 15, 16, 17] # Coils to use for sensing.
+gpu_device          = 1     # GPU device to use for EDITER, -1 for CPU.
+interference_freq   = 24e6  # Frequency of the interference signal, to be used in autosniffer_select.
 
 [pilottone]
 pt_freq = 24e6
 prewhiten = true
 discard_badcoils = true # Uses the same algorithm as autosniffer_select to discard bad coils.
+sensing_coils       = [15, 16, 17] # Coils to use for sensing.
 
 [saving]
-remove_os = true # Remove 2x oversampling when saving the raw data
-save_model_subtracted = true # Whether or not to save PT model subtracted data in main_pilottone_extract script.
+remove_os               = false # Remove 2x oversampling when saving the raw data
+save_model_subtracted   = false # Whether or not to save PT model subtracted data in main_pilottone_extract script.
+save_pt_waveforms       = false # Whether or not to save pilottone waveforms in main_pilottone_extract script.
+save_pt_separate        = true # Whether or not to save pilottone waveforms in separate npz files.
