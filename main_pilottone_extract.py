@@ -357,15 +357,15 @@ def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
         return output_data_fullpath
 
 if __name__ == '__main__':
-    # Read config
-    with open('config.toml', 'r') as cf:
-        cfg = rtoml.load(cf)
-
     # Check if filepaths are provided as arguments
     argparser = argparse.ArgumentParser()
-    argparser.add_argument('-f', '--filepaths', nargs='+', help='List of filepaths to process')
+    argparser.add_argument('-f', '--filepaths', nargs='+', help='List of filepaths to process.')
+    argparser.add_argument('-c', '--config', nargs='?', default='config.toml', help='Config file to be used during processing.')
 
     args = argparser.parse_args()
+
+    with open(args.config, 'r') as cf:
+        cfg = rtoml.load(cf)
 
     if args.filepaths:
         filepaths = args.filepaths

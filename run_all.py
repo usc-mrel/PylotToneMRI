@@ -11,15 +11,16 @@ import main_editer_correct
 import send_to_recon_server
 from ui.selectionui import get_multiple_filepaths
 
-# Read config
-with open('config.toml', 'r') as cf:
-    cfg = rtoml.load(cf)
 
 # Check if filepaths are provided as arguments
 argparser = argparse.ArgumentParser()
 argparser.add_argument('-f', '--filepaths', nargs='+', help='List of filepaths to process')
+argparser.add_argument('-c', '--config', nargs='?', default='config.toml', help='Config file to be used during processing.')
 
 args = argparser.parse_args()
+
+with open(args.config, 'r') as cf:
+    cfg = rtoml.load(cf)
 
 if args.filepaths:
     filepaths = args.filepaths
