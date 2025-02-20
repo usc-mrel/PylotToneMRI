@@ -11,7 +11,6 @@ import pyfftw
 import math
 import matplotlib.pyplot as plt
 import re
-# import time
 
 def calc_fovshift_phase(kx, ky, acq):
     gbar = 42.576e6
@@ -267,6 +266,7 @@ def extract_pilottone_navs(pt_sig, f_samp: float, params: dict):
     # ================================================================
     (accept_list, sign_list, corrs) = pickcoilsbycorr(pt_respiratory_freqs, params['respiratory']['corr_init_ch'], params['respiratory']['corr_threshold'])
     accept_list = np.sort(accept_list)
+    print(f'Number of channels selected for respiratory PT: {len(accept_list)}')
 
     if params['respiratory']['separation_method'] == 'pca':
         # ================================================================
@@ -283,17 +283,6 @@ def extract_pilottone_navs(pt_sig, f_samp: float, params: dict):
     elif params['respiratory']['separation_method'] == 'sobi':
         pt_respiratory, _, _ = sobi(pt_respiratory_freqs[:,accept_list].T)
         pt_respiratory = pt_respiratory[0,:]
-
-    # from scipy.sparse.linalg import eigs
-    # from scipy.linalg import eig
-
-    # Ud, Sd, _ = svds(pt_respiratory_freqs[:,deny_list], k=1)
-    # pt_resp_interf = Ud*Sd
-    # D, V = eigs(A, k=1)
-    # ================================================================
-    # Filter out the residual resp and slow transition
-    # ================================================================  
-    # Assumes heart beat > 40bpm
 
     filt_bp_cardiac = designbp_tukeyfilt_freq(params['cardiac']['freq_start'], params['cardiac']['freq_stop'], f_samp, n_pt_samp)
 
@@ -318,6 +307,7 @@ def extract_pilottone_navs(pt_sig, f_samp: float, params: dict):
     if len(accept_list_cardiac) == 1:
         print('Could not find more channels with cardiac PT. Extraction is possibly failed.')
 
+    print(f'Number of channels selected for cardiac PT: {len(accept_list_cardiac)}')
     if params['cardiac']['separation_method'] == 'pca':
         U, S, _ = svds(pt_cardiac_freqs[:,accept_list_cardiac], k=1)
         pt_cardiac = U*S
@@ -329,9 +319,8 @@ def extract_pilottone_navs(pt_sig, f_samp: float, params: dict):
     # Normalize navs before returning.
     # Here, I am using prctile instead of the max to avoid weird spikes.
     if not params['debug']['no_normalize']:
-        pt_respiratory = pt_respiratory - np.percentile(pt_respiratory, 5)
-        pt_respiratory = pt_respiratory/np.percentile(pt_respiratory, 99)
-
+        pt_respiratory -= np.percentile(pt_respiratory, 5)
+        pt_respiratory /= np.percentile(pt_respiratory, 99)
 
         # Check if the waveform is flipped and flip if necessary.
         # Logic is, peaks looking up should be narrower than the bottom side for better triggering.
