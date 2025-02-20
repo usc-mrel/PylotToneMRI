@@ -111,11 +111,15 @@ def waveforms_asarray(waveform_list: list[ismrmrd.Waveform], ecg_channel: int=0)
             pt_sampling_time = wf.getHead().sample_time_us*1e-6
             pt_init_timestamp = wf.time_stamp
 
-    ecg_waveform = (np.asarray(np.concatenate(ecg_waveform, axis=0), dtype=float)-2048)
-    ecg_waveform = ecg_waveform/np.percentile(ecg_waveform, 99.9)
-    ecg_trigs = (np.concatenate(ecg_trigs, axis=0)/2**14).astype(int)
-    time_ecg = np.arange(ecg_waveform.shape[0])*ecg_sampling_time + ecg_init_timestamp*2.5e-3
-    ecg_ = {'time_ecg': time_ecg, 'ecg_waveform': ecg_waveform, 'ecg_trigs': ecg_trigs, 'ecg_sampling_time': ecg_sampling_time, 'ecg_init_timestamp': ecg_init_timestamp}
+    if len(ecg_waveform) == 0:
+        warnings.warn('No ECG waveform found.')
+        ecg_ = None
+    else:
+        ecg_waveform = (np.asarray(np.concatenate(ecg_waveform, axis=0), dtype=float)-2048)
+        ecg_waveform = ecg_waveform/np.percentile(ecg_waveform, 99.9)
+        ecg_trigs = (np.concatenate(ecg_trigs, axis=0)/2**14).astype(int)
+        time_ecg = np.arange(ecg_waveform.shape[0])*ecg_sampling_time + ecg_init_timestamp*2.5e-3
+        ecg_ = {'time_ecg': time_ecg, 'ecg_waveform': ecg_waveform, 'ecg_trigs': ecg_trigs, 'ecg_sampling_time': ecg_sampling_time, 'ecg_init_timestamp': ecg_init_timestamp}
     
     if len(resp_waveform) == 0:
         warnings.warn('No PT waveform found.')
