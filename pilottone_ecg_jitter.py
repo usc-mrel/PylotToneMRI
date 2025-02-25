@@ -6,8 +6,9 @@ import numpy as np
 from pilottone import beat_rejection, interval_peak_matching, get_volt_from_protoname
 import mrdhelper
 from scipy.signal import find_peaks
+from ui.selectionui import get_multiple_filepaths
 
-def pt_ecg_jitter(time_pt, pt_cardiac, pt_cardiac_derivative, time_ecg, ecg_waveform, pt_cardiac_trigs=None, pt_derivative_trigs=None, ecg_trigs=None, skip_time=0.6, show_outputs=True): 
+def pt_ecg_jitter(time_pt, pt_cardiac, pt_cardiac_derivative, time_ecg, ecg_waveform, pt_cardiac_trigs=None, pt_derivative_trigs=None, ecg_trigs=None, skip_time=0.6, max_hr=120, show_outputs=True): 
     """ 
     This function calculates the jitter between the pilot tone and the ECG triggers.
     The ECG triggers are assumed to be correct. The PT triggers are assumed to be correct.
@@ -33,6 +34,8 @@ def pt_ecg_jitter(time_pt, pt_cardiac, pt_cardiac_derivative, time_ecg, ecg_wave
         ECG triggers. If None, they are calculated.
     skip_time : float, optional
         Time to skip at the beginning of the waveforms in seconds. The default is 0.6.
+    max_hr : int, optional
+        Maximum heart rate in bpm. The default is 120.
     show_outputs : bool, optional
         Whether to show the outputs. The default is True.
 
@@ -56,7 +59,7 @@ def pt_ecg_jitter(time_pt, pt_cardiac, pt_cardiac_derivative, time_ecg, ecg_wave
     dt_pt = (time_pt[1] - time_pt[0])
     
     if pt_cardiac_trigs is None:
-        Dmin = int(np.ceil(0.65/(dt_pt))) # Min distance between two peaks, should not be less than 0.6 secs (100 bpm max assumed)
+        Dmin = int(np.ceil((60/max_hr)/(dt_pt))) # Min distance between two peaks, should not be less than 0.6 secs (100 bpm max assumed)
         pt_cardiac_peak_locs,_ = find_peaks(pt_cardiac[time_pt > skip_time], prominence=0.4, distance=Dmin)
     else:
         pt_cardiac_peak_locs = np.nonzero(pt_cardiac_trigs[time_pt > skip_time])[0]
@@ -139,7 +142,7 @@ def pt_ecg_jitter(time_pt, pt_cardiac, pt_cardiac_derivative, time_ecg, ecg_wave
     
     return peak_diff, derivative_peak_diff
 
-def calculate_jitter(time_pt, pt_cardiac, time_ecg, ecg_waveform, pt_cardiac_trigs=None, ecg_trigs=None, skip_time=0.6, peak_prominence=0.4): 
+def calculate_jitter(time_pt, pt_cardiac, time_ecg, ecg_waveform, pt_cardiac_trigs=None, ecg_trigs=None, skip_time=0.6, peak_prominence=0.4, max_hr=120): 
     """ 
     This function calculates the jitter between the pilot tone and the ECG triggers.
     The ECG triggers are assumed to be correct. The PT triggers are assumed to be correct.
@@ -163,6 +166,8 @@ def calculate_jitter(time_pt, pt_cardiac, time_ecg, ecg_waveform, pt_cardiac_tri
         Time to skip at the beginning of the waveforms in seconds. The default is 0.6.
     peak_prominence : float, optional
         Prominence of the pilot tone peaks. The default is 0.4.
+    max_hr : int, optional
+        Maximum heart rate in bpm. The default is 120.
 
     Returns
     -------
@@ -185,7 +190,7 @@ def calculate_jitter(time_pt, pt_cardiac, time_ecg, ecg_waveform, pt_cardiac_tri
     dt_pt = (time_pt[1] - time_pt[0])
     
     if pt_cardiac_trigs is None:
-        Dmin = int(np.ceil(0.65/(dt_pt))) # Min distance between two peaks, should not be less than 0.6 secs (100 bpm max assumed)
+        Dmin = int(np.ceil((60/max_hr)/(dt_pt))) # Min distance between two peaks, should not be less than 0.6 secs (100 bpm max assumed)
         pt_cardiac_peak_locs,_ = find_peaks(pt_cardiac[time_pt > skip_time], prominence=peak_prominence, distance=Dmin)
     else:
         pt_cardiac_peak_locs = np.nonzero(pt_cardiac_trigs[time_pt > skip_time])[0]
@@ -205,7 +210,7 @@ def print_pt_confusion_table(pt_stats, raw_files, title='Pilot Tone Confusion Ta
     print('| {:^70} |'.format(title))
     print('| {:^10} | {:>15} | {:>15} | {:>15} |'.format('PT Voltage', 'Number of ECG triggers', 'False Negative', 'False Positive'))
     for raw_file in raw_files:
-        row = [pt_stats[raw_file][0], len(pt_stats[raw_file][1]), len(pt_stats[raw_file][2]), len(pt_stats[raw_file][3])]
+        row = [pt_stats[raw_file][0], np.sum(pt_stats[raw_file][-1]), len(pt_stats[raw_file][2]), len(pt_stats[raw_file][3])]
         print('| {:^10} | {:>20} | {:>15} | {:>15} |'.format(*row))
 
 if __name__ == '__main__':
@@ -217,10 +222,15 @@ if __name__ == '__main__':
     with open('config.toml', 'r') as cf:
         cfg = rtoml.load(cf)
 
-    DATA_ROOT = cfg['DATA_ROOT']
-    DATA_DIR = cfg['data_folder']
+    filepaths = get_multiple_filepaths(dir=cfg['DATA_ROOT'])
+    dataset_dir = os.path.join('/', *(os.path.dirname(filepaths[0]).split('/')[:-2]))
+    DATA_ROOT = os.path.dirname(dataset_dir)
+    DATA_DIR = os.path.basename(dataset_dir)
+    raw_files = [os.path.basename(filepath) for filepath in filepaths]
+    # DATA_ROOT = cfg['DATA_ROOT']
+    # DATA_DIR = cfg['data_folder']
     # raw_files = ['282', '283', '284', '285', '286', '287', '289', '290', '291', '292']
-    raw_files = ['286', '288', '290', '292', '294', '296', '298', '300', '302', '304', '318', '320', '322']
+    # raw_files = ['286', '288', '290', '292', '294', '296', '298', '300', '302', '304', '318', '320', '322']
     # raw_files = ['547']
 
     pt_stats = {}
@@ -233,7 +243,8 @@ if __name__ == '__main__':
         wf_list, _ = mrdhelper.read_waveforms(ismrmrd_data_fullpath)
 
         ecg_, pt_ = mrdhelper.waveforms_asarray(wf_list)
-        ecg_waveform = ecg_['ecg_waveform']
+        ecg_waveform = -ecg_['ecg_waveform']
+        ecg_waveform /= np.percentile(ecg_waveform, 99.9)
         ecg_trigs = ecg_['ecg_trigs']
         time_ecg = ecg_['time_ecg']
 
@@ -241,8 +252,10 @@ if __name__ == '__main__':
         pt_derivative_trigs = pt_['pt_derivative_trigs']
         pt_cardiac = pt_['pt_cardiac']
         pt_cardiac_derivative = pt_['pt_cardiac_derivative']
-        pt_cardiac -= np.percentile(pt_cardiac, 5)
-        pt_cardiac /= np.percentile(pt_cardiac, 96)
+        pt_cardiac[:20] = pt_cardiac[20]
+        pt_cardiac[-20:] = pt_cardiac[-20]
+        pt_cardiac -= np.percentile(pt_cardiac, 10)
+        pt_cardiac /= np.percentile(pt_cardiac, 95)
         pt_cardiac_derivative -= np.percentile(pt_cardiac_derivative, 5)
         pt_cardiac_derivative /= np.percentile(pt_cardiac_derivative, 99)
 
@@ -253,15 +266,24 @@ if __name__ == '__main__':
         time_ecg -= t_ref
         time_pt -= t_ref
 
+        plt.figure()
+        plt.plot(time_ecg, ecg_waveform)
+        plt.plot(time_ecg[ecg_trigs==1], ecg_waveform[ecg_trigs==1], '*')
+        plt.plot(time_pt, pt_cardiac)
+        plt.plot(time_pt[pt_cardiac_trigs==1], pt_cardiac[pt_cardiac_trigs==1], 'x', label='PT Triggers')
+        plt.show()
+        skip_time = 0.8
+        print(f'ECG trigs: {np.sum(ecg_trigs[time_ecg > skip_time])}')
+
         pt_stats_ = calculate_jitter(time_pt, pt_cardiac, time_ecg, ecg_waveform, ecg_trigs=ecg_trigs, 
                                     #  pt_cardiac_trigs=pt_cardiac_trigs, 
-                                     skip_time=0.8, peak_prominence=0.4)
+                                     skip_time=skip_time, peak_prominence=0.4, max_hr=180)
         dpt_stats_ = calculate_jitter(time_pt, pt_cardiac_derivative, time_ecg, ecg_waveform, ecg_trigs=ecg_trigs, 
                                     #   pt_cardiac_trigs=pt_derivative_trigs, 
-                                      skip_time=0.8, peak_prominence=0.5)
+                                      skip_time=skip_time, peak_prominence=0.5, max_hr=120)
 
-        pt_stats[raw_file] = (ptvolt,*pt_stats_)
-        dpt_stats[raw_file] = (ptvolt,*dpt_stats_)
+        pt_stats[raw_file] = (ptvolt,*pt_stats_, ecg_trigs[time_ecg > skip_time])
+        dpt_stats[raw_file] = (ptvolt,*dpt_stats_, ecg_trigs[time_ecg > skip_time])
 
     jitter = np.array([np.std(pt_stats[raw_file][1]) for raw_file in raw_files])
     mean_delay = np.array([np.mean(pt_stats[raw_file][1]) for raw_file in raw_files])
@@ -282,7 +304,8 @@ if __name__ == '__main__':
     axs[0,0].set_xlabel('Pilot Tone Voltage [V]')
     axs[0,0].set_ylabel('Jitter [ms]')
     axs[0,0].set_title('Jitter vs PT Voltage')
-    axs[0,0].axhline(y=pt_sampling_time_ms*2, xmin=0, xmax=1, color='red', linestyle='--', label='2x PT Sampling Period', alpha=0.7)
+    axs[0,0].set_ylim([0, 25])
+    # axs[0,0].axhline(y=pt_sampling_time_ms*2, xmin=0, xmax=1, color='red', linestyle='--', label='2x PT Sampling Period', alpha=0.7)
 
     axs[1,0].plot(ptvolts, mean_delay*1e3, 'o')
     axs[1,0].set_xlabel('Pilot Tone Voltage [V]')
@@ -293,7 +316,9 @@ if __name__ == '__main__':
     axs[0,1].set_xlabel('Pilot Tone Voltage [V]')
     axs[0,1].set_ylabel('Jitter [ms]')
     axs[0,1].set_title('Jitter vs Inverse Derivative PT Voltage')
-    axs[0,1].axhline(y=pt_sampling_time_ms*2, xmin=0, xmax=1, color='red', linestyle='--', label='2x PT Sampling Period', alpha=0.7)
+    axs[0,1].set_ylim([0, 25])
+
+    # axs[0,1].axhline(y=pt_sampling_time_ms*2, xmin=0, xmax=1, color='red', linestyle='--', label='2x PT Sampling Period', alpha=0.7)
 
     axs[1,1].plot(ptvolts, dpt_mean_delay*1e3, 'o')
     axs[1,1].set_xlabel('Pilot Tone Voltage [V]')

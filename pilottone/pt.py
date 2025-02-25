@@ -433,7 +433,7 @@ def interval_peak_matching(time_pt, pt_cardiac_peak_locs, time_ecg, ecg_peak_loc
 
     return np.asarray(peak_diff), np.asarray(miss_pk_idx), np.asarray(extra_pk_idx)
 
-def extract_triggers(time_pt, cardiac_waveform, skip_time=0.6, prominence=0.4):
+def extract_triggers(time_pt, cardiac_waveform, skip_time=0.6, prominence=0.4, max_hr=120):
     ''' Extract triggers from the cardiac waveform.
         Parameters:
             time_pt: np.array
@@ -447,7 +447,7 @@ def extract_triggers(time_pt, cardiac_waveform, skip_time=0.6, prominence=0.4):
                 Trigger waveform.
     '''
     dt_pt = (time_pt[1] - time_pt[0])
-    Dmin = int(np.ceil(0.6/(dt_pt))) # Min distance between two peaks, should not be less than 0.6 secs (100 bpm max assumed)
+    Dmin = int(np.ceil((60/max_hr)/(dt_pt))) # Min distance between two peaks, should not be less than 0.6 secs (100 bpm max assumed)
     pt_cardiac_peak_locs,_ = find_peaks(cardiac_waveform[time_pt > skip_time], prominence=prominence, distance=Dmin)
     pt_cardiac_peak_locs += np.sum(time_pt <= skip_time)
     pt_peaks_selected = pt_cardiac_peak_locs

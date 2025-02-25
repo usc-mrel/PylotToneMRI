@@ -9,4 +9,5 @@ pyfftw
 hyperspy
 rtoml
 pip
+mpl-interactions # For custom ROI in noise_graph_from_series.ipynb
 cupy-cuda12x # For GPU acceleration at EDITER processing.

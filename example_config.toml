@@ -1,9 +1,6 @@
 # File Path config
-output_filename = "vol0622_pilottone"
-
-data_folder     = "vol0622_20230522"
-raw_file        = "67"
-DATA_ROOT       = '/mnt/LIN_DATA/MRI_DATA'
+data_folder     = ""
+DATA_ROOT       = "/"
 
 # Reconstruction control
 [reconstruction]
@@ -25,6 +22,22 @@ pt_freq = 24e6
 prewhiten = true
 discard_badcoils = true # Uses the same algorithm as autosniffer_select to discard bad coils.
 sensing_coils       = [15, 16, 17] # Coils to use for sensing.
+show_outputs    = false # Whether or not to show the outputs of the pilottone extraction.
+golay_filter_len = 81 # Golay filter length for initial denoising.
+
+[pilottone.respiratory]
+freq_start          = 0.05 # [Hz] Lower frequency limit for respiratory bandpass filter
+freq_stop           = 0.9 # [Hz] Upper frequency limit for respiratory bandpass filter
+corr_threshold      = 0.9 # Correlation threshold for respiratory coil selection
+initial_channel      = -1 # Initial guess for the respiratory coil selection
+separation_method = "sobi" # SOBI or PCA
+
+[pilottone.cardiac]
+freq_start          = 1 # [Hz] Lower frequency limit for cardiac bandpass filter
+freq_stop           = 20 # [Hz] Upper frequency limit for cardiac bandpass filter
+corr_threshold      = 0.9 # Correlation threshold for cardiac coil selection
+initial_channel     = 'Body_6:1:B13' # Initial guess for the cardiac coil selection
+separation_method = "pca" # SOBI or PCA
 
 [saving]
 remove_os               = false # Remove 2x oversampling when saving the raw data

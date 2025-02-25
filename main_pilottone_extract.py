@@ -14,6 +14,7 @@ import ctypes
 from constants import PILOTTONE_WAVEFORM_ID
 import pilottone as pt
 from pilottone.pt import extract_triggers
+import matplotlib.pyplot as plt
 
 from pilottone_ecg_jitter import pt_ecg_jitter
 from ui.selectionui import get_multiple_filepaths
@@ -24,11 +25,13 @@ from ui.selectionui import get_multiple_filepaths
 def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
     f_pt = cfg['pilottone']['pt_freq']
     remove_os = cfg['saving']['remove_os']
-    DATA_ROOT = cfg['DATA_ROOT']
-    DATA_DIR = cfg['data_folder']
+    # DATA_ROOT = cfg['DATA_ROOT']
+    # DATA_DIR = cfg['data_folder']
+    data_dir = os.path.join('/', *(os.path.dirname(ismrmrd_data_fullpath).split('/')[:-2]))
+    print(f"Data dir: {data_dir}")
 
     raw_file = ismrmrd_data_fullpath.split('/')[-1]
-    ismrmrd_data_fullpath, ismrmrd_noise_fullpath = mrdhelper.siemens_mrd_finder(DATA_ROOT, DATA_DIR, raw_file)
+    ismrmrd_data_fullpath, ismrmrd_noise_fullpath = mrdhelper.siemens_mrd_finder(data_dir, '', raw_file)
 
     print(f'Reading {ismrmrd_data_fullpath}...')
     with ismrmrd.Dataset(ismrmrd_data_fullpath) as dset:
@@ -39,10 +42,14 @@ def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
         for ii in range(n_acq):
             acq_list.append(dset.read_acquisition(ii))
 
-        n_wf = dset.number_of_waveforms()
-        print(f'There are {n_wf} waveforms in the dataset. Reading...')
+        try:
+            n_wf = dset.number_of_waveforms()
+            print(f'There are {n_wf} waveforms in the dataset. Reading...')
+        except LookupError:
+            n_wf = 0
 
         wf_list = []
+
         for ii in range(n_wf):
             wf_list.append(dset.read_waveform(ii))
         
@@ -52,7 +59,7 @@ def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
     traj_name = hdr.userParameters.userParameterString[1].value
 
     # load the .mat file containing the trajectory
-    traj = loadmat(os.path.join(DATA_ROOT, DATA_DIR, traj_name), squeeze_me=True)
+    traj = loadmat(os.path.join(data_dir, traj_name), squeeze_me=True)
 
     n_unique_angles = int(traj['param']['repetitions'])
 
@@ -91,7 +98,7 @@ def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
         coil_name.append(clbl.coilName)
 
     coil_name = np.asarray(coil_name)
-
+    print(f'Coil names: {coil_name}')
     print(f"Coils to be used as sniffers: {coil_name[sensing_coils]}")
 
     f0 = hdr.experimentalConditions.H1resonanceFrequency_Hz
@@ -108,10 +115,13 @@ def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
 
     ## Process ECG waveform
     ecg, _ = mrdhelper.waveforms_asarray(wf_list)
-    ecg_waveform = ecg['ecg_waveform']
-    ecg_waveform = pt.check_waveform_polarity(ecg_waveform, 0.5)*ecg_waveform
-    time_ecg = ecg['time_ecg'] - acq_list[0].acquisition_time_stamp*2.5e-3
-    ecg_trigs = ecg['ecg_trigs']
+    if ecg is not None:
+        ecg_waveform = ecg['ecg_waveform']
+        ecg_waveform = pt.check_waveform_polarity(ecg_waveform, 0.5)*ecg_waveform
+        time_ecg = ecg['time_ecg'] - acq_list[0].acquisition_time_stamp*2.5e-3
+        ecg_trigs = ecg['ecg_trigs']
+    else:
+        print('No ECG waveform found, skipping the validation part.')
     # plt.figure()
     # plt.plot(time_ecg, ecg_waveform)
     # plt.plot(time_ecg[ecg_trigs==1], ecg_waveform[ecg_trigs==1], '*')
@@ -184,28 +194,28 @@ def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
     # %%
 
     f_samp = 1/samp_time_pt # [Hz]
-
-    pt_extract_params = {'golay_filter_len': 81,
+    print(f"Using {cfg['pilottone']['cardiac']['initial_channel']} as the initial cardiac coil.")
+    pt_extract_params = {'golay_filter_len': cfg['pilottone']['golay_filter_len'],
                         'respiratory': {
-                                'freq_start': 0.05,
-                                'freq_stop': 0.9,
-                                'corr_threshold': 0.9,
-                                'corr_init_ch': -1,
-                                'separation_method': 'pca', # 'sobi', 'pca'
+                                'freq_start': cfg['pilottone']['respiratory']['freq_start'],
+                                'freq_stop': cfg['pilottone']['respiratory']['freq_stop'],
+                                'corr_threshold': cfg['pilottone']['respiratory']['corr_threshold'],
+                                'corr_init_ch': cfg['pilottone']['respiratory']['initial_channel'],
+                                'separation_method': cfg['pilottone']['respiratory']['separation_method'], # 'sobi', 'pca'
                         },
                         'cardiac': {
-                                    'freq_start': 1,
-                                    'freq_stop': 30,
-                                    'corr_threshold': 0.85,
-                                    'corr_init_ch': np.nonzero(coil_name == 'Body_6:1:B22')[0][0],                           
-                                    'separation_method': 'pca', # 'sobi', 'pca'
+                                    'freq_start': cfg['pilottone']['cardiac']['freq_start'],
+                                    'freq_stop': cfg['pilottone']['cardiac']['freq_stop'],
+                                    'corr_threshold': cfg['pilottone']['cardiac']['corr_threshold'],
+                                    'corr_init_ch': np.nonzero(coil_name == cfg['pilottone']['cardiac']['initial_channel'])[0][0],                           
+                                    'separation_method': cfg['pilottone']['cardiac']['separation_method'], # 'sobi', 'pca'
 
                         },
                         'debug': {
-                            'selected_coils': [0,1],
+                            'selected_coils': cfg['pilottone']['debug']['selected_coils'],
                             'coil_legend': coil_name[mri_coils],
-                            'show_plots': False,
-                            'no_normalize': True,
+                            'show_plots': cfg['pilottone']['debug']['show_plots'],
+                            'no_normalize': cfg['pilottone']['debug']['no_normalize'],
                         }
                     }
 
@@ -217,15 +227,16 @@ def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
 
     if cfg['saving']['save_pt_separate']:
         print('Saving waveforms separately...')
-        np.savez(os.path.join(DATA_ROOT, DATA_DIR, f"{ismrmrd_data_fullpath.split('/')[-1][:-3]}_ptwaveforms.npz"), 
+        np.savez(os.path.join(data_dir, f"{ismrmrd_data_fullpath.split('/')[-1][:-3]}_ptwaveforms.npz"), 
                  pt_respiratory=pt_respiratory, 
                  pt_cardiac=pt_cardiac,
                  time_pt=time_pt)
 
     # pt_cardiac = -pt_cardiac
     pt_cardiac[:20] = pt_cardiac[20]
-    pt_cardiac -= np.percentile(pt_cardiac, 5)
-    pt_cardiac /= np.percentile(pt_cardiac, 99)
+    pt_cardiac[-20:] = pt_cardiac[-20]
+    pt_cardiac -= np.percentile(pt_cardiac, 10)
+    pt_cardiac /= np.percentile(pt_cardiac, 95)
 
     pt_cardiac_filtered = savgol_filter(pt_cardiac, sg_filter_len, 3, axis=0)
     pt_cardiac_derivative = np.hstack((0, np.diff(pt_cardiac_filtered)/(time_pt[1] - time_pt[0])))
@@ -234,13 +245,29 @@ def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
     pt_cardiac_derivative -= np.percentile(pt_cardiac_derivative, 5)
     pt_cardiac_derivative /= np.percentile(pt_cardiac_derivative, 99)
 
-    pt_cardiac_trigs = extract_triggers(time_pt, pt_cardiac, skip_time=0.6, prominence=0.5)
-    pt_derivative_trigs = extract_triggers(time_pt, pt_cardiac_derivative, skip_time=0.6, prominence=0.6)
+    pt_cardiac_trigs = extract_triggers(time_pt, pt_cardiac, skip_time=1, prominence=0.4, max_hr=160)
+    pt_derivative_trigs = extract_triggers(time_pt, pt_cardiac_derivative, skip_time=1, prominence=0.5, max_hr=120)
 
-    _,_ = pt_ecg_jitter(time_pt, pt_cardiac, pt_cardiac_derivative,
-                        time_ecg, ecg_waveform, 
-                        pt_cardiac_trigs=pt_cardiac_trigs, pt_derivative_trigs=pt_derivative_trigs, ecg_trigs=ecg_trigs, 
-                        skip_time=0.6, show_outputs=False)
+    if ecg is not None:
+        _,_ = pt_ecg_jitter(time_pt, pt_cardiac, pt_cardiac_derivative,
+                            time_ecg, ecg_waveform, 
+                            pt_cardiac_trigs=pt_cardiac_trigs, pt_derivative_trigs=pt_derivative_trigs, ecg_trigs=ecg_trigs, 
+                            skip_time=1, show_outputs=cfg['pilottone']['show_outputs'])
+    elif ecg is None and cfg['pilottone']['show_outputs']:
+        fig, axs = plt.subplots(2,1, figsize=(10, 6), sharex=True)
+        axs[0].plot(time_pt, pt_cardiac, label='Cardiac')
+        axs[0].plot(time_pt, pt_cardiac_derivative, label='Cardiac Derivative')
+        axs[0].plot(time_pt[pt_cardiac_trigs==1], pt_cardiac[pt_cardiac_trigs==1], '*', label='Cardiac Triggers')
+        axs[0].plot(time_pt[pt_derivative_trigs==1], pt_cardiac_derivative[pt_derivative_trigs==1], '*', label='Cardiac Derivative Triggers')
+        axs[0].set_title('Cardiac Triggers')
+        axs[0].set_xlabel('Time [s]')
+        axs[0].legend()
+        axs[1].plot(time_pt, pt_respiratory, label='Respiratory')
+        axs[1].set_title('Respiratory')
+        axs[1].set_xlabel('Time [s]')
+        axs[1].legend()
+        plt.show()
+
 
 
     # %% [markdown]
@@ -318,7 +345,7 @@ def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
             n_samp = n_samp // 2
 
 
-        output_dir_fullpath = os.path.join(DATA_ROOT, DATA_DIR, 'raw', 'h5_proc')
+        output_dir_fullpath = os.path.join(data_dir, 'raw', 'h5_proc')
         output_data_fullpath = os.path.join(output_dir_fullpath, f"{ismrmrd_data_fullpath.split('/')[-1][:-3]}_mdlsub.h5")
         print('Saving to ' + output_data_fullpath)
 
