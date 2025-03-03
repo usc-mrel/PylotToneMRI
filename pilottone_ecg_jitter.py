@@ -227,11 +227,6 @@ if __name__ == '__main__':
     DATA_ROOT = os.path.dirname(dataset_dir)
     DATA_DIR = os.path.basename(dataset_dir)
     raw_files = [os.path.basename(filepath) for filepath in filepaths]
-    # DATA_ROOT = cfg['DATA_ROOT']
-    # DATA_DIR = cfg['data_folder']
-    # raw_files = ['282', '283', '284', '285', '286', '287', '289', '290', '291', '292']
-    # raw_files = ['286', '288', '290', '292', '294', '296', '298', '300', '302', '304', '318', '320', '322']
-    # raw_files = ['547']
 
     pt_stats = {}
     dpt_stats = {}
@@ -243,7 +238,7 @@ if __name__ == '__main__':
         wf_list, _ = mrdhelper.read_waveforms(ismrmrd_data_fullpath)
 
         ecg_, pt_ = mrdhelper.waveforms_asarray(wf_list)
-        ecg_waveform = -ecg_['ecg_waveform']
+        ecg_waveform = ecg_['ecg_waveform']
         ecg_waveform /= np.percentile(ecg_waveform, 99.9)
         ecg_trigs = ecg_['ecg_trigs']
         time_ecg = ecg_['time_ecg']
@@ -256,8 +251,10 @@ if __name__ == '__main__':
         pt_cardiac[-20:] = pt_cardiac[-20]
         pt_cardiac -= np.percentile(pt_cardiac, 10)
         pt_cardiac /= np.percentile(pt_cardiac, 95)
-        pt_cardiac_derivative -= np.percentile(pt_cardiac_derivative, 5)
-        pt_cardiac_derivative /= np.percentile(pt_cardiac_derivative, 99)
+        pt_cardiac_derivative[:20] = pt_cardiac_derivative[20]
+        pt_cardiac_derivative[-20:] = pt_cardiac_derivative[-20]
+        pt_cardiac_derivative -= np.percentile(pt_cardiac_derivative, 10)
+        pt_cardiac_derivative /= np.percentile(pt_cardiac_derivative, 98)
 
         time_pt = pt_['time_pt']
 
@@ -266,21 +263,21 @@ if __name__ == '__main__':
         time_ecg -= t_ref
         time_pt -= t_ref
 
-        plt.figure()
-        plt.plot(time_ecg, ecg_waveform)
-        plt.plot(time_ecg[ecg_trigs==1], ecg_waveform[ecg_trigs==1], '*')
-        plt.plot(time_pt, pt_cardiac)
-        plt.plot(time_pt[pt_cardiac_trigs==1], pt_cardiac[pt_cardiac_trigs==1], 'x', label='PT Triggers')
-        plt.show()
-        skip_time = 0.8
+        # plt.figure()
+        # plt.plot(time_ecg, ecg_waveform)
+        # plt.plot(time_ecg[ecg_trigs==1], ecg_waveform[ecg_trigs==1], '*')
+        # plt.plot(time_pt, pt_cardiac)
+        # plt.plot(time_pt[pt_cardiac_trigs==1], pt_cardiac[pt_cardiac_trigs==1], 'x', label='PT Triggers')
+        # plt.show()
+        skip_time = 1.5
         print(f'ECG trigs: {np.sum(ecg_trigs[time_ecg > skip_time])}')
 
         pt_stats_ = calculate_jitter(time_pt, pt_cardiac, time_ecg, ecg_waveform, ecg_trigs=ecg_trigs, 
                                     #  pt_cardiac_trigs=pt_cardiac_trigs, 
-                                     skip_time=skip_time, peak_prominence=0.4, max_hr=180)
+                                     skip_time=skip_time, peak_prominence=0.4, max_hr=160)
         dpt_stats_ = calculate_jitter(time_pt, pt_cardiac_derivative, time_ecg, ecg_waveform, ecg_trigs=ecg_trigs, 
                                     #   pt_cardiac_trigs=pt_derivative_trigs, 
-                                      skip_time=skip_time, peak_prominence=0.5, max_hr=120)
+                                      skip_time=skip_time, peak_prominence=0.5, max_hr=160)
 
         pt_stats[raw_file] = (ptvolt,*pt_stats_, ecg_trigs[time_ecg > skip_time])
         dpt_stats[raw_file] = (ptvolt,*dpt_stats_, ecg_trigs[time_ecg > skip_time])

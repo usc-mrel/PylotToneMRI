@@ -232,7 +232,7 @@ def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
                  pt_cardiac=pt_cardiac,
                  time_pt=time_pt)
 
-    # pt_cardiac = -pt_cardiac
+    pt_cardiac = cfg['pilottone']['cardiac']['sign']*pt_cardiac
     pt_cardiac[:20] = pt_cardiac[20]
     pt_cardiac[-20:] = pt_cardiac[-20]
     pt_cardiac -= np.percentile(pt_cardiac, 10)
@@ -242,11 +242,11 @@ def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
     pt_cardiac_derivative = np.hstack((0, np.diff(pt_cardiac_filtered)/(time_pt[1] - time_pt[0])))
     pt_cardiac_derivative[:20] = pt_cardiac_derivative[20]
     pt_cardiac_derivative[-20:] = pt_cardiac_derivative[-20]
-    pt_cardiac_derivative -= np.percentile(pt_cardiac_derivative, 5)
-    pt_cardiac_derivative /= np.percentile(pt_cardiac_derivative, 99)
+    pt_cardiac_derivative -= np.percentile(pt_cardiac_derivative, 10)
+    pt_cardiac_derivative /= np.percentile(pt_cardiac_derivative, 98)
 
     pt_cardiac_trigs = extract_triggers(time_pt, pt_cardiac, skip_time=1, prominence=0.4, max_hr=160)
-    pt_derivative_trigs = extract_triggers(time_pt, pt_cardiac_derivative, skip_time=1, prominence=0.5, max_hr=120)
+    pt_derivative_trigs = extract_triggers(time_pt, pt_cardiac_derivative, skip_time=1, prominence=0.5, max_hr=160)
 
     if ecg is not None:
         _,_ = pt_ecg_jitter(time_pt, pt_cardiac, pt_cardiac_derivative,

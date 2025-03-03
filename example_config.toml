@@ -38,6 +38,12 @@ freq_stop           = 20 # [Hz] Upper frequency limit for cardiac bandpass filte
 corr_threshold      = 0.9 # Correlation threshold for cardiac coil selection
 initial_channel     = 'Body_6:1:B13' # Initial guess for the cardiac coil selection
 separation_method = "pca" # SOBI or PCA
+sign = 1   # When cardiac signal is not stable enough, sign detection fails. This will flip the signal in case cardiac signal is flipped.
+
+[pilottone.debug]
+selected_coils = [0,1]
+show_plots = false
+no_normalize = true
 
 [saving]
 remove_os               = false # Remove 2x oversampling when saving the raw data
