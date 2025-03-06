@@ -63,26 +63,29 @@ def prep_1mov4navs_figure2(img, t_l1, l1, t_l2, l2, t_l3, l3, t_l4=None, l4=None
     axs.append(fig.add_axes([(Nx2 + x_padding_left) / W, ((Nplots+1)*y_padding + (Nplots-1)*h_pl) / H, w_pl / W, h_pl / H]))
     axs[0].plot(t_l1, l1, linewidth=2)
 
-    axs[0].legend(['Cardiac Pilot Tone'], loc='lower right')
-    axs[0].set_ylabel('Cardiac\ndisplacement', fontname=fn)
+    # axs[0].legend(['Cardiac Pilot Tone'], loc='lower right')
+    axs[0].set_ylabel('Cardiac\nPilot Tone', fontname=fn)
     axs[0].axes.yaxis.set_ticklabels([])
+    axs[0].axes.yaxis.set_ticks([])
     axs[0].set_xlim(xlims)
 
     # Line profile
     axs.append(fig.add_axes([(Nx2 + x_padding_left) / W, ((Nplots)*y_padding + (Nplots-2)*h_pl) / H, w_pl / W, h_pl / H]))
     axs[1].plot(t_l2, l2, 'r', linewidth=2)
 
-    axs[1].legend(['ECG'], loc='lower right')
-    axs[1].set_ylabel('ECG\namplitude')
+    # axs[1].legend(['ECG'], loc='lower right')
+    axs[1].set_ylabel('ECG')
     axs[1].axes.yaxis.set_ticklabels([])
+    axs[1].axes.yaxis.set_ticks([])
     axs[1].set_xlim(xlims)
 
     # Line profile for Respiratory Pilot Tone
     axs.append(fig.add_axes([(Nx2 + x_padding_left) / W, ((Nplots-1)*y_padding + (Nplots-3)*h_pl) / H, w_pl / W, h_pl / H]))
     axs[2].plot(t_l3, l3, linewidth=2)
-    axs[2].legend(['Respiratory Pilot Tone'], loc='lower right')
-    axs[2].set_ylabel('Respiratory\ndisplacement')
+    # axs[2].legend(['Respiratory Pilot Tone'], loc='lower right')
+    axs[2].set_ylabel('Respiratory\nPilot Tone')
     axs[2].axes.yaxis.set_ticklabels([])
+    axs[2].axes.yaxis.set_ticks([])
     axs[2].set_xlim(xlims)
 
     # Line profile for Liver Dome Movement
@@ -93,6 +96,8 @@ def prep_1mov4navs_figure2(img, t_l1, l1, t_l2, l2, t_l3, l3, t_l4=None, l4=None
         axs[3].set_ylabel('Pixel shift')
         axs[3].legend(['Liver Dome Movement'], loc='lower right')
         axs[3].set_xlim(xlims)
+    else:
+        axs[2].set_xlabel('Time [s]')
 
     # Add vertical lines at t_step
     line0 = axs[0].axvline(0, color='k', linestyle='--', linewidth=2)
@@ -142,16 +147,16 @@ if __name__ == '__main__':
         
     # Set video parameters
     framerate = 20
-    ecg_sign = -1
+    ecg_sign = 1
     crop_to = [120, 120]
-    t_sel = [2, 12]  # [s]
-    do_transpose = True
+    t_sel = [35, 45]  # [s]
+    do_transpose = False
     do_flipx = True
-    do_flipy = True
-    # regions to highlight. Format: [{'t': [t1, t2], 'color': 'r', 'alpha': x}, ...] yellow: #FFD700
+    do_flipy = False
+    # regions to highlight. Format: [{'t': [t1, t2], 'color': 'r', 'alpha': x}, ...] yellow: #FFD700, olive: #808000
     highlights = [
-        {'t': [0.5, 4], 'color': '#808000', 'alpha': 0.4},
-
+        {'t': [0, 2], 'color': '#808000', 'alpha': 0.4},
+        {'t': [2.5, 7], 'color': 'r', 'alpha': 0.4},
     ]
     show_im_resp = False
     video_name = f'{filepath[:-4]}_{t_sel[0]}s_{t_sel[1]}s.mp4'
@@ -208,7 +213,7 @@ if __name__ == '__main__':
                 # pt_card_triggers = ((wf.data[2,:]-2**31) != 0).astype(int)#np.round(((wf.data[2,:] - 2**31)/2**31)).astype(int)
                 timestamp0 = wf.time_stamp
                 pt_sampling_time = wf.getHead().sample_time_us*1e-6
-                break
+                # break
         time_pt = np.arange(resp_waveform.shape[0])*pt_sampling_time
 
         # =======================================
