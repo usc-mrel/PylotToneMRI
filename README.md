@@ -22,6 +22,11 @@ pip install -r requirements.txt
 
 **Note:** This method results in lighter environment, but the Python version may not be compatible with the codebease. Toolbox is only tested for Python>=3.10 and Python<=3.12.
 
+# System requirements
+
+The memory requirements are highly dependent on the input data length and number of channels. With the example raw data, pilot tone extraction requires 40GB peak memory.
+Optionally, a CUDA capable GPU can be used for EDITER processing.
+
 # Usage
 
 Most inputs and outputs are in [ISMRMRD](https://ismrmrd.readthedocs.io/en/latest/) format. Some scripts do modify the input raw data, so in case something goes wrong, it is important to back-up original raw data. For a more detailed explanation of raw data, please refer to subsection [Directory Hierarchy for Raw Data](#directory-hierarchy-for-raw-data).
@@ -30,7 +35,7 @@ Most scripts take the configuration file in `toml` format, for specifying input 
 
 Example for supplying the config file: `python script_to_run.py -c config_file_path.toml`. If no input config is supplied, `config.toml` is used as the default path.
 
-Most scripts also accepts list of inputs to be processed as a list of filepaths using `-f` or `--filepaths` switch. If no filepath is provided, scripts will open a UI to select one or multiple files for processing.
+Most scripts also accepts list of inputs to be processed as a list of filepaths using `-f` or `--filepaths` switch. Filepaths can be provided as a space separated list (i.e. `python script_to_run.py -f PATH1 PATH2 ...`). If no filepath is provided, scripts will open a UI to select one or multiple files for processing.
  
 Following are the important notebooks/scripts for the typical usage:
 
