@@ -170,3 +170,8 @@ cython_debug/
 
 # vscode
 .vscode/
+
+# Project specific
+saved_figures/
+figures/
+configs/
