@@ -1,3 +1,4 @@
+import ismrmrd
 from numpy.fft import ifft, fft
 from scipy.signal.windows import tukey
 from scipy.linalg import lstsq
@@ -12,7 +13,24 @@ import math
 import matplotlib.pyplot as plt
 import re
 
-def calc_fovshift_phase(kx, ky, acq):
+def calc_fovshift_phase(kx: npt.NDArray, ky: npt.NDArray, acq: ismrmrd.Acquisition) -> npt.NDArray[np.complex64]:
+    '''Calculate the phase demodulation due to the FOV shift in the GCS.
+
+    Parameters:
+    ----------
+    kx (np.ndarray): 
+        1D array of k-space points in the logical x coordinates.
+    ky (np.ndarray): 
+        2D array of k-space points in the logical y coordinates.
+    acq (ismrmrd.Acquisition): 
+        Acquisition object containing the phase and read directions, and position.
+
+    Returns:
+    ----------
+    np.ndarray: 
+        1D array of phase demodulation values in the GCS.
+    '''
+
     gbar = 42.576e6
 
     gx = np.diff(np.concatenate((np.zeros((1, kx.shape[1]), dtype=kx.dtype), kx)), axis=0)/gbar # [T/m]
@@ -330,6 +348,183 @@ def extract_pilottone_navs(pt_sig, f_samp: float, params: dict):
         # Shift the base and normalize again to make it mostly 0 to 1
         pt_cardiac -= np.percentile(pt_cardiac, 5)
         pt_cardiac = pt_cardiac/np.percentile(pt_cardiac, 99)
+
+    return pt_respiratory, pt_cardiac
+
+def calibrate_pt(pt_sig, f_samp: float, params: dict):
+    '''Extract the respiratory and cardiac pilot tone signals from the given PT signal.
+    Parameters:
+    ----------
+    pt_sig (np.array): Pilot tone signal.
+    f_samp (float): Sampling frequency of the PT signal.
+    params (dict): Dictionary containing the parameters for the extraction.
+
+    Returns:
+    ----------
+    pt_respiratory (np.array): Extracted respiratory pilot tone signal.
+    pt_cardiac (np.array): Extracted cardiac pilot tone signal.
+    '''
+    n_pt_samp = pt_sig.shape[0]
+    n_ch = pt_sig.shape[1]
+    dt_pt = 1/f_samp
+    time_pt = np.arange(n_pt_samp)*dt_pt
+    
+    # ================================================================
+    # Denoising step
+    # ================================================================ 
+
+    from scipy.signal import savgol_filter
+    
+    pt_denoised = savgol_filter(pt_sig, params['golay_filter_len'], 3, axis=0)
+    pt_denoised = pt_denoised - np.mean(pt_denoised, axis=0)
+
+    if params['debug']['show_plots'] is True:
+        plot_multich_comparison(time_pt, pt_sig, pt_denoised, [' ']*n_ch, ['Original', 'SG filtered'])
+
+
+    # ================================================================
+    # Filter out higher than resp frequency ~1 Hz
+    # ================================================================ 
+    # df = f_samp/n_pt_samp/2
+    # f_filt = np.arange(0, f_samp, df) - (f_samp - (n_pt_samp % 2)*df)/2 # Handles both even and odd length signals.
+
+    if params['respiratory']['freq_start'] is None:
+        filt_bp_resp = designlp_tukeyfilt_freq(params['respiratory']['freq_stop'], f_samp, n_pt_samp)
+    else:
+        filt_bp_resp = designbp_tukeyfilt_freq(params['respiratory']['freq_start'], params['respiratory']['freq_stop'], f_samp, n_pt_samp)
+
+    pt_respiratory_freqs = apply_filter_freq(pt_denoised, filt_bp_resp, 'symmetric')
+
+    if params['debug']['show_plots'] is True:
+        plot_multich_comparison(time_pt, pt_denoised, pt_respiratory_freqs, [' ']*n_ch, ['Original', 'respiratory filtered'])
+
+    
+    # ================================================================
+    # Reject channels that have low correlation
+    # ================================================================
+    (accept_list_resp, sign_list, corrs) = pickcoilsbycorr(pt_respiratory_freqs, params['respiratory']['corr_init_ch'], params['respiratory']['corr_threshold'])
+    accept_list_resp = np.sort(accept_list_resp)
+    print(f'Number of channels selected for respiratory PT: {len(accept_list_resp)}')
+
+    if params['respiratory']['separation_method'] == 'pca':
+        # ================================================================
+        # Apply PCA along coils to extract common signal (hopefuly resp)
+        # ================================================================ 
+        Uresp, S, Vresp = svds(pt_respiratory_freqs[:,accept_list_resp], k=1)
+
+        # ================================================================
+        # Separate a single respiratory source
+        # ================================================================
+        pt_respiratory = Uresp
+        pt_respiratory = pt_respiratory[:,0]
+
+    elif params['respiratory']['separation_method'] == 'sobi':
+        pt_respiratory, _, Vresp = sobi(pt_respiratory_freqs[:,accept_list_resp].T)
+        pt_respiratory = pt_respiratory[0,:]
+
+    filt_bp_cardiac = designbp_tukeyfilt_freq(params['cardiac']['freq_start'], params['cardiac']['freq_stop'], f_samp, n_pt_samp)
+
+    pt_cardiac_freqs = apply_filter_freq(pt_denoised, filt_bp_cardiac, 'symmetric')
+
+    # Separate a single cardiac source
+    # Correlation based channel selection
+    # This is a semi automated fix for the case when a variety of SNR is
+    # provided, corr_th needs to be adjusted. So, we start from high corr, and
+    # loop until we have at least 2 channels with cardiac. My observation is,
+    # if we can't find at least 2 channels, signal is too noisy to use anyways,
+    # so we fail to extract cardiac PT.
+    corr_threshold_cardiac = params['cardiac']['corr_threshold']
+    while corr_threshold_cardiac >= 0.5:
+        [accept_list_cardiac, signList, corrChannels] = pickcoilsbycorr(pt_cardiac_freqs, params['cardiac']['corr_init_ch'], corr_threshold_cardiac)
+        if len(accept_list_cardiac) < 2:
+            corr_threshold_cardiac -= 0.05
+        else:
+            break
+
+
+    if len(accept_list_cardiac) == 1:
+        print('Could not find more channels with cardiac PT. Extraction is possibly failed.')
+
+    print(f'Number of channels selected for cardiac PT: {len(accept_list_cardiac)}')
+    if params['cardiac']['separation_method'] == 'pca':
+        Ucard, S, Vcard = svds(pt_cardiac_freqs[:,accept_list_cardiac], k=1)
+        pt_cardiac = Ucard
+        pt_cardiac = pt_cardiac[:,0]
+    elif params['cardiac']['separation_method'] == 'sobi':
+        pt_cardiac, _, Vcard = sobi(pt_cardiac_freqs[:,accept_list_cardiac].T)
+        pt_cardiac = pt_cardiac[0,:]
+
+    # Normalize navs before returning.
+    # Here, I am using prctile instead of the max to avoid weird spikes.
+    if not params['debug']['no_normalize']:
+        pt_respiratory -= np.percentile(pt_respiratory, 5)
+        pt_respiratory /= np.percentile(pt_respiratory, 99)
+
+        # Check if the waveform is flipped and flip if necessary.
+        # Logic is, peaks looking up should be narrower than the bottom side for better triggering.
+        ptc_sign = check_waveform_polarity(pt_cardiac[40:], prominence=0.5)
+        pt_cardiac = ptc_sign*pt_cardiac
+        
+        # Shift the base and normalize again to make it mostly 0 to 1
+        pt_cardiac -= np.percentile(pt_cardiac, 5)
+        pt_cardiac = pt_cardiac/np.percentile(pt_cardiac, 99)
+
+    return Vresp, accept_list_resp, pt_respiratory, Vcard, accept_list_cardiac, pt_cardiac
+
+def apply_pt_calib(pt_sig, Vresp, accept_list_resp, Vcard, accept_list_cardiac, f_samp, params):
+    '''Apply the calibration matrices to the PT signal.
+    Parameters:
+    ----------
+    pt_sig (np.array): Pilot tone signal.
+    Uresp (np.array): Respiratory calibration matrix.
+    accept_list_resp (list): List of channels used for respiratory calibration.
+    Ucard (np.array): Cardiac calibration matrix.
+    accept_list_cardiac (list): List of channels used for cardiac calibration.
+
+    Returns:
+    ----------
+    pt_respiratory (np.array): Extracted respiratory pilot tone signal.
+    pt_cardiac (np.array): Extracted cardiac pilot tone signal.
+    '''
+
+    n_pt_samp = pt_sig.shape[0]
+    n_ch = pt_sig.shape[1]
+    dt_pt = 1/f_samp
+    time_pt = np.arange(n_pt_samp)*dt_pt
+    
+    # ================================================================
+    # Denoising step
+    # ================================================================ 
+
+    from scipy.signal import savgol_filter
+    
+    pt_denoised = savgol_filter(pt_sig, params['golay_filter_len'], 3, axis=0)
+    pt_denoised = pt_denoised - np.mean(pt_denoised, axis=0)
+
+    if params['debug']['show_plots'] is True:
+        plot_multich_comparison(time_pt, pt_sig, pt_denoised, [' ']*n_ch, ['Original', 'SG filtered'])
+
+
+    # ================================================================
+    # Filter out higher than resp frequency ~1 Hz
+    # ================================================================ 
+    # df = f_samp/n_pt_samp/2
+    # f_filt = np.arange(0, f_samp, df) - (f_samp - (n_pt_samp % 2)*df)/2 # Handles both even and odd length signals.
+
+    if params['respiratory']['freq_start'] is None:
+        filt_bp_resp = designlp_tukeyfilt_freq(params['respiratory']['freq_stop'], f_samp, n_pt_samp)
+    else:
+        filt_bp_resp = designbp_tukeyfilt_freq(params['respiratory']['freq_start'], params['respiratory']['freq_stop'], f_samp, n_pt_samp)
+
+    pt_respiratory_freqs = apply_filter_freq(pt_denoised, filt_bp_resp, 'symmetric')
+
+    pt_respiratory = pt_respiratory_freqs[:, accept_list_resp]@Vresp[:,0]
+
+    filt_bp_cardiac = designbp_tukeyfilt_freq(params['cardiac']['freq_start'], params['cardiac']['freq_stop'], f_samp, n_pt_samp)
+    pt_cardiac_freqs = apply_filter_freq(pt_denoised, filt_bp_cardiac, 'symmetric')
+
+    pt_cardiac = pt_cardiac_freqs[:, accept_list_cardiac]@Vcard[:,0]
+
 
     return pt_respiratory, pt_cardiac
 
