@@ -129,3 +129,43 @@ def waveforms_asarray(waveform_list: list[ismrmrd.Waveform], ecg_channel: int=0)
     pt_ = {'time_pt': time_pt, 'resp_waveform': resp_waveform, 'pt_cardiac': pt_cardiac, 'pt_cardiac_trigs': pt_cardiac_trigs, 'pt_cardiac_derivative': pt_cardiac_derivative, 'pt_derivative_trigs': pt_derivative_trigs, 'pt_sampling_time': pt_sampling_time, 'pt_init_timestamp': pt_init_timestamp}
 
     return ecg_, pt_
+
+def read_mrd(ismrmrd_data_fullpath: str) -> tuple[list[ismrmrd.Acquisition], list[ismrmrd.Waveform], ismrmrd.xsd.ismrmrdHeader]:
+    '''Reads an ISMRMRD dataset.
+        Parameters
+        ----------
+        ismrmrd_data_fullpath : str
+            MRD File name.'
+        
+        Returns
+        -------
+        acq_list : list
+            List of acquisitions.
+        wf_list : list
+            List of waveforms.
+        hdr : ismrmrd.xsd.ismrmrdHeader
+            XML header.
+        '''
+    print(f'Reading {ismrmrd_data_fullpath}...')
+    with ismrmrd.Dataset(ismrmrd_data_fullpath) as dset:
+        n_acq = dset.number_of_acquisitions()
+        print(f'There are {n_acq} acquisitions in the file. Reading...')
+
+        acq_list = []
+        for ii in range(n_acq):
+            acq_list.append(dset.read_acquisition(ii))
+
+        try:
+            n_wf = dset.number_of_waveforms()
+            print(f'There are {n_wf} waveforms in the dataset. Reading...')
+        except LookupError:
+            n_wf = 0
+
+        wf_list = []
+
+        for ii in range(n_wf):
+            wf_list.append(dset.read_waveform(ii))
+        
+        hdr = ismrmrd.xsd.CreateFromDocument(dset.read_xml_header())
+    
+    return acq_list, wf_list, hdr

@@ -3,7 +3,7 @@ Contains signal processing functions.
 Author: Bilal Tasdelen
 '''
 
-from numpy.fft import ifft, ifftshift, fft, fftshift
+from numpy.fft import ifft, ifftshift, fft, fftshift, fftn, ifftn
 import numpy as np
 import numpy.typing as npt
 from scipy.signal.windows import tukey
@@ -15,6 +15,18 @@ def cifft(data, axis):
 def cfft(data, axis):
     '''Centered FFT.'''
     return fftshift(fft(ifftshift(data, axis), None, axis), axis)
+
+def cfftn(data, axes):
+    '''Centered FFTN.'''
+    return fftshift(fftn(ifftshift(data, axes=axes), None, axes=axes), axes=axes)
+
+def cifftn(data, axes):
+    '''Centered FFTN.'''
+    return ifftshift(ifftn(fftshift(data, axes=axes), None, axes=axes), axes=axes)
+
+def rssq(data, axis):
+    '''Root sum of squares along the given axis.'''
+    return np.sqrt(np.sum(np.abs(data)**2, axis=axis))
 
 def to_hybrid_kspace(indata):
     '''Centered ifft on first dimension. Does not do fftshift before ifft, as it treats data as time signal.'''
