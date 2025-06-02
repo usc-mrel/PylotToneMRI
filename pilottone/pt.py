@@ -1,10 +1,11 @@
+from typing import Literal
 import ismrmrd
 from numpy.fft import ifft, fft
 from scipy.signal.windows import tukey
 from scipy.linalg import lstsq
 from scipy.signal import find_peaks, peak_widths
 from scipy.sparse.linalg import svds
-from .signal import apply_filter_freq, designbp_tukeyfilt_freq, designlp_tukeyfilt_freq, qint
+from .signal import apply_filter_freq, designbp_tukeyfilt_freq, designlp_tukeyfilt_freq, qint, angle_dependant_filtering
 from sobi import sobi
 import numpy as np
 import numpy.typing as npt
@@ -65,16 +66,18 @@ def est_dtft(t, data, deltaf, window):
        clean:  (Nx x Nline x Nch) Model subtracted data
        x_fit:  (Nline x Nch) Estimated complex amplitudes.'''
 
-    Nsamp = data.shape[0]
     dt = t[1]-t[0] # [s]
-    w0 = 2*deltaf*dt*np.pi # Normalized frequency [-pi, +pi]
-    
-    x_fit = (np.sum(data*np.exp(+1j*w0[None,:,None]*np.arange(0, Nsamp)[:,None,None]),axis=0, keepdims=True)/Nsamp)
-
+    x_fit = dtft_sum(data, dt, deltaf)
     s = (np.exp(-1j*2*np.pi*(deltaf[None,:])*t[:,None])*window[:,None])[:,:,None]
     clean = data - s*x_fit
 
     return (clean, x_fit)
+
+def dtft_sum(data, dt, deltaf):
+    Nsamp = data.shape[0]
+    w0 = 2*deltaf*dt*np.pi # Normalized frequency [-pi, +pi]
+    xsum = (np.sum(data*np.exp(+1j*w0[None,:,None]*np.arange(0, Nsamp)[:,None,None]),axis=0, keepdims=True)/Nsamp)
+    return xsum
 
 
 def find_freq_qifft(data, df, f_center, f_radius, os, ave_dim):
@@ -127,6 +130,68 @@ def find_freq_qifft(data, df, f_center, f_radius, os, ave_dim):
     fcorrmin = f_center - f_found
 
     return fcorrmin
+
+
+def extract_raw_pt(ksp_measured: np.ndarray, kx: np.ndarray, ky: np.ndarray,
+                    n_unique_angles: int, acq: ismrmrd.Acquisition, 
+                    f_diff: float, df: float, dt: float, method: Literal['sine', 'wPCA'] = 'sine', freq_correction: bool = True) -> tuple[np.ndarray, np.ndarray]:
+    
+    n_acq = ksp_measured.shape[1]
+    # ================================
+    # Demodulate any shifts
+    # ================================
+    phase_mod_rads = calc_fovshift_phase(kx, ky, acq)
+    phase_mod_rads = [phase_mod_rads[:,ii%n_unique_angles] for ii in range(n_acq)]
+    phase_mod_rads = np.array(phase_mod_rads)[:, :].transpose()[:,:,None]
+
+    # Apply the negative of the phase
+    ksp_measured_ = ksp_measured*phase_mod_rads
+
+    if freq_correction:
+        fcorrmin = find_freq_qifft(ksp_measured_[:,:,:], df, f_diff, 3e3, 4, (2))
+    else:
+        fcorrmin = 0
+
+    ksp_window = np.ones(ksp_measured_.shape[0])
+    ksp_measured_ = ksp_measured_*ksp_window[:,None,None]
+
+    time_acq = np.arange(0, ksp_measured_.shape[0])*dt
+
+    if method == 'sine':
+        ksp_ptsubbed_, pt_sig_fit = est_dtft(time_acq, ksp_measured_, np.array([f_diff])-fcorrmin, ksp_window)
+
+    elif method == 'wPCA':
+        if freq_correction:
+            w_corr = np.exp(-2j*np.pi*np.arange(ksp_measured_.shape[0])[:,None]*dt*fcorrmin[None,:])[:,:,None]
+        else:
+            w_corr = 1
+        
+        X = np.reshape(ksp_measured_*w_corr, (ksp_measured_.shape[0], -1))
+        b, _,_ = svds(X, k=1)
+        
+        B = np.reshape(b @ np.conj(b.T) @ X, (ksp_measured_.shape[0], n_acq, -1))*np.conj(w_corr)
+
+        ksp_ptsubbed_ = ksp_measured_ - B
+        # TODO: This is so weird. this function looks like it should return the same thing as dtft_sum, but it doesn't. It uses dtft_sum internally.
+        # But jitter is smaller using this function. Maybe return back to this later.
+        _, pt_sig_fit = est_dtft(time_acq, ksp_measured_, np.array([f_diff])-fcorrmin, ksp_window)
+        # pt_sig_fit = (np.conj(X.T) @ b).reshape(n_acq, -1)
+
+        # pt_sig_fit = pt.dtft_sum(ksp_ptsubbed_, dt, np.array([f_diff])-fcorrmin).squeeze()
+        # plt.figure()
+        # plt.subplot(121)
+        # plt.plot(np.abs(b))
+        # plt.title('Carrier estimated')
+        # plt.subplot(212)
+        # plt.plot(np.abs(pt_sig_fit))
+        # plt.title('Motion')
+    
+    ksp_ptsubbed = ksp_ptsubbed_*np.conj(phase_mod_rads)
+
+    pt_sig_fit = np.abs(pt_sig_fit)
+    pt_sig = np.squeeze(pt_sig_fit - np.mean(pt_sig_fit, axis=1, keepdims=True))
+    pt_sig = angle_dependant_filtering(pt_sig, n_unique_angles)
+    return pt_sig, ksp_ptsubbed
 
 def sniffer_sub(b: npt.NDArray, A: npt.NDArray):
     Npe = A.shape[0]
