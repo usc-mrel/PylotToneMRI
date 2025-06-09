@@ -4,6 +4,7 @@ import numpy as np
 import os
 import fnmatch
 import warnings
+import time
 
 def siemens_mrd_finder(data_root: str, data_folder: str, raw_file: str, h5folderext: str = '', rawfile_ext: str = '') -> str:
     """
@@ -62,15 +63,11 @@ def read_waveforms(filepath: str, dataset_name: str = 'dataset') -> list[ismrmrd
             XML header.
     '''
     print(f'Reading {filepath}...')
-    with ismrmrd.Dataset(filepath, dataset_name=dataset_name) as dset:
-        n_wf = dset.number_of_waveforms()
-        print(f'There are {n_wf} waveforms in the dataset. Reading...')
-
-        waveform_list = []
-        for ii in range(n_wf):
-            waveform_list.append(dset.read_waveform(ii))
-        xml_header = ismrmrd.xsd.CreateFromDocument(dset.read_xml_header())
-        print('Waveforms read.')
+    with ismrmrd.File(filepath) as mrd:
+        waveform_list = mrd[dataset_name].waveforms[:]
+        print(f'There are {len(waveform_list)} waveforms in the dataset. Reading...')
+        xml_header = mrd[dataset_name].header
+    print('Waveforms read.')
 
     return waveform_list, xml_header
 
@@ -146,26 +143,72 @@ def read_mrd(ismrmrd_data_fullpath: str) -> tuple[list[ismrmrd.Acquisition], lis
         hdr : ismrmrd.xsd.ismrmrdHeader
             XML header.
         '''
+    start = time.time()
     print(f'Reading {ismrmrd_data_fullpath}...')
-    with ismrmrd.Dataset(ismrmrd_data_fullpath) as dset:
-        n_acq = dset.number_of_acquisitions()
-        print(f'There are {n_acq} acquisitions in the file. Reading...')
 
-        acq_list = []
-        for ii in range(n_acq):
-            acq_list.append(dset.read_acquisition(ii))
+    with ismrmrd.File(ismrmrd_data_fullpath) as mrd:
+        if mrd['dataset'].has_acquisitions():
+            print('Reading acquisitions...')
+            # Read all acquisitions from the dataset
+            acq_list = mrd['dataset'].acquisitions[:]
+            print(f'There are {len(acq_list)} acquisitions in the dataset.')
+        if mrd['dataset'].has_waveforms():
+            wf_list = mrd['dataset'].waveforms[:]
+            print(f'There are {len(wf_list)} waveforms in the dataset.')
+        else:
+            wf_list = []
+            print('No waveforms found in the dataset.')
+        if mrd['dataset'].has_header():
+            hdr = mrd['dataset'].header
+        else:
+            warnings.warn('No header found in the dataset. Using default header.')
+            hdr = ismrmrd.xsd.ismrmrdHeader()
 
-        try:
-            n_wf = dset.number_of_waveforms()
-            print(f'There are {n_wf} waveforms in the dataset. Reading...')
-        except LookupError:
-            n_wf = 0
-
-        wf_list = []
-
-        for ii in range(n_wf):
-            wf_list.append(dset.read_waveform(ii))
-        
-        hdr = ismrmrd.xsd.CreateFromDocument(dset.read_xml_header())
+    end = time.time()
+    print(f'Finished reading {ismrmrd_data_fullpath} in {end - start:.2f} seconds.')
     
     return acq_list, wf_list, hdr
+
+def read_csm(ismrmrd_noise_fullpath: str) -> tuple[np.ndarray, np.ndarray, ismrmrd.xsd.ismrmrdHeader]:
+    '''Reads the coil sensitivity maps from an ISMRMRD dataset.
+        Parameters
+        ----------
+        ismrmrd_noise_fullpath : str
+            MRD File name.
+        
+        Returns
+        -------
+        data_csm : np.ndarray
+            Coil sensitivity maps.
+        data_bc : np.ndarray
+            Body coil data.
+        hdr : ismrmrd.xsd.ismrmrdHeader
+            XML header.
+    '''
+
+    acq_list_noise, _, hdr_noise = read_mrd(ismrmrd_noise_fullpath)
+    acq_csm = [acq_ for acq_ in acq_list_noise if acq_.isFlagSet(ismrmrd.ACQ_IS_SURFACECOILCORRECTIONSCAN_DATA)]
+    print(f"Number of CSMs: {len(acq_csm)}")
+    n_pe = hdr_noise.encoding[0].encodingLimits.kspace_encoding_step_1.maximum + 1
+    n_par = hdr_noise.encoding[0].encodingLimits.kspace_encoding_step_2.maximum + 1
+    print(f"CSM shape: {acq_csm[0].data.shape[0]}, {acq_csm[0].data.shape[1]}, {n_pe}, {n_par}")
+
+    data_csm = np.zeros(
+        (acq_csm[0].available_channels, acq_csm[0].data.shape[1], 
+            n_pe, n_par), 
+        dtype=np.complex64)
+    data_bc = np.zeros(
+        (2, acq_csm[0].data.shape[1], 
+            n_pe, n_par), 
+        dtype=np.complex64)
+    for acq_ in acq_csm:
+        if acq_.active_channels == 2:
+            data_bc[:, :, acq_.idx.kspace_encode_step_1, acq_.idx.kspace_encode_step_2] = acq_.data
+        else:
+            data_csm[:, :, acq_.idx.kspace_encode_step_1, acq_.idx.kspace_encode_step_2] = acq_.data
+
+    # Pad in k-space to match the encoded size
+    data_bc = np.pad(data_bc, ((0,), (0,), ((hdr_noise.encoding[0].encodedSpace.matrixSize.y - n_pe)//2,), ((hdr_noise.encoding[0].encodedSpace.matrixSize.z - n_par)//2,)))
+    data_csm = np.pad(data_csm, ((0,), (0,), ((hdr_noise.encoding[0].encodedSpace.matrixSize.y - n_pe)//2,), ((hdr_noise.encoding[0].encodedSpace.matrixSize.z - n_par)//2,)))
+
+    return data_csm, data_bc, hdr_noise
