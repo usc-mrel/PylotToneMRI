@@ -134,7 +134,8 @@ def find_freq_qifft(data, df, f_center, f_radius, os, ave_dim):
 
 def extract_raw_pt(ksp_measured: np.ndarray, kx: np.ndarray, ky: np.ndarray,
                     n_unique_angles: int, acq: ismrmrd.Acquisition, 
-                    f_diff: float, df: float, dt: float, method: Literal['sine', 'wPCA'] = 'sine', freq_correction: bool = True) -> tuple[np.ndarray, np.ndarray]:
+                    f_diff: float, df: float, dt: float, method: Literal['sine', 'wPCA'] = 'sine', 
+                    freq_correction: bool = True, return_complex: bool = False) -> tuple[np.ndarray, np.ndarray]:
     
     n_acq = ksp_measured.shape[1]
     # ================================
@@ -188,9 +189,12 @@ def extract_raw_pt(ksp_measured: np.ndarray, kx: np.ndarray, ky: np.ndarray,
     
     ksp_ptsubbed = ksp_ptsubbed_*np.conj(phase_mod_rads)
 
-    pt_sig_fit = np.abs(pt_sig_fit)
-    pt_sig = np.squeeze(pt_sig_fit - np.mean(pt_sig_fit, axis=1, keepdims=True))
-    pt_sig = angle_dependant_filtering(pt_sig, n_unique_angles)
+    if return_complex:
+        pt_sig = np.squeeze(pt_sig_fit)
+    else:
+        pt_sig_fit = np.abs(pt_sig_fit)
+        pt_sig = np.squeeze(pt_sig_fit - np.mean(pt_sig_fit, axis=1, keepdims=True))
+        pt_sig = angle_dependant_filtering(pt_sig, n_unique_angles)
     return pt_sig, ksp_ptsubbed
 
 def sniffer_sub(b: npt.NDArray, A: npt.NDArray):

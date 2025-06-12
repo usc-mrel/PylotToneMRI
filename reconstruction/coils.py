@@ -66,7 +66,7 @@ def bc_adapt_comb(bcip: np.ndarray, bcquad: np.ndarray) -> np.ndarray:
     
     return bc_comb
 
-def get_surface_corrected_maps(im_csm: np.ndarray, im_bc: np.ndarray) -> np.ndarray:
+def get_surface_corrected_maps(im_csm: np.ndarray, im_bc: np.ndarray, mask_threshold: float=0.05) -> np.ndarray:
     """
     Compute surface corrected maps from coil sensitivity maps and body coil data.
     Parameters
@@ -75,6 +75,8 @@ def get_surface_corrected_maps(im_csm: np.ndarray, im_bc: np.ndarray) -> np.ndar
         Coil sensitivity maps, shape: [coil, x, y, z]
     im_bc : np.ndarray
         Body coil data, shape: [2, x, y, z] (in-phase and quadrature)
+    mask_threshold : float
+        Max BC signal's fraction to threshold for noise, default is 0.05.
     Returns
     -------
     im_csm: np.ndarray
@@ -100,7 +102,7 @@ def get_surface_corrected_maps(im_csm: np.ndarray, im_bc: np.ndarray) -> np.ndar
     mbc = np.max(np.abs(bc_comb_filt))
 
     # Create threshold mask and repeat for all channels
-    mask2 = np.abs(bc_comb_filt) > mbc * 0.05
+    mask2 = np.abs(bc_comb_filt) > mbc * mask_threshold
     mask2 = np.repeat(mask2, n_ch, axis=0)
 
     # Scale the filtered surface image 
