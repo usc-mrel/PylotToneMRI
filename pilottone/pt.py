@@ -383,13 +383,12 @@ def extract_pilottone_navs(pt_sig, f_samp: float, params: dict):
     # if we can't find at least 2 channels, signal is too noisy to use anyways,
     # so we fail to extract cardiac PT.
     corr_threshold_cardiac = params['cardiac']['corr_threshold']
-    while corr_threshold_cardiac >= 0.5:
+    while corr_threshold_cardiac >= min(0.5, corr_threshold_cardiac-0.05):
         [accept_list_cardiac, signList, corrChannels] = pickcoilsbycorr(pt_cardiac_freqs, params['cardiac']['corr_init_ch'], corr_threshold_cardiac)
         if len(accept_list_cardiac) < 2:
             corr_threshold_cardiac -= 0.05
         else:
             break
-
 
     if len(accept_list_cardiac) == 1:
         print('Could not find more channels with cardiac PT. Extraction is possibly failed.')
@@ -400,8 +399,15 @@ def extract_pilottone_navs(pt_sig, f_samp: float, params: dict):
         pt_cardiac = U*S
         pt_cardiac = pt_cardiac[:,0]
     elif params['cardiac']['separation_method'] == 'sobi':
-        pt_cardiac, _, _ = sobi(pt_cardiac_freqs[:,accept_list_cardiac].T)
-        pt_cardiac = pt_cardiac[0,:]
+        pt_cardiac, _, Vcard = sobi(pt_cardiac_freqs[:,accept_list_cardiac].T, num_lags=375)
+        from pilottone.signal import cfftn
+        # Determine which channel is the cardiac by looking at the frequency content
+        df = f_samp/n_pt_samp
+        faxis = np.arange(0, f_samp, df) - (f_samp - (n_pt_samp % 2)*df)/2
+        f_mask = (faxis > 0.66) & (faxis < 3) # Assumes between 40 bpm to 180 bpm
+        ptc_freq_max = np.max(np.abs(cfftn(pt_cardiac.T, axes=(0,))[f_mask,:]), axis=0)
+        card_idx = np.argmax(ptc_freq_max)
+        pt_cardiac = pt_cardiac[card_idx,:]
 
     # Normalize navs before returning.
     # Here, I am using prctile instead of the max to avoid weird spikes.
@@ -503,13 +509,12 @@ def calibrate_pt(pt_sig, f_samp: float, params: dict):
     # if we can't find at least 2 channels, signal is too noisy to use anyways,
     # so we fail to extract cardiac PT.
     corr_threshold_cardiac = params['cardiac']['corr_threshold']
-    while corr_threshold_cardiac >= 0.5:
+    while corr_threshold_cardiac >= min(0.5, corr_threshold_cardiac-0.05):
         [accept_list_cardiac, signList, corrChannels] = pickcoilsbycorr(pt_cardiac_freqs, params['cardiac']['corr_init_ch'], corr_threshold_cardiac)
         if len(accept_list_cardiac) < 2:
             corr_threshold_cardiac -= 0.05
         else:
             break
-
 
     if len(accept_list_cardiac) == 1:
         print('Could not find more channels with cardiac PT. Extraction is possibly failed.')
@@ -520,7 +525,7 @@ def calibrate_pt(pt_sig, f_samp: float, params: dict):
         pt_cardiac = Ucard
         pt_cardiac = pt_cardiac[:,0]
     elif params['cardiac']['separation_method'] == 'sobi':
-        pt_cardiac, _, Vcard = sobi(pt_cardiac_freqs[:,accept_list_cardiac].T)
+        pt_cardiac, _, Vcard = sobi(pt_cardiac_freqs[:,accept_list_cardiac].T, num_lags=375)
         pt_cardiac = pt_cardiac[0,:]
 
     # Normalize navs before returning.
@@ -720,3 +725,45 @@ def extract_triggers(time_pt, cardiac_waveform, skip_time=0.6, prominence=0.4, m
     pt_cardiac_trigs[pt_peaks_selected] = 1
 
     return pt_cardiac_trigs
+
+def process_cplx_pt(pt_raw: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    ''' Extract phase and magnitude from given complex PT signals. Processses the phase according to the method described in Supporting Information 1 of:
+    Anand S, Lustig M. Beat Pilot Tone (BPT): Simultaneous MRI and RF motion sensing at arbitrary frequencies. Magnetic Resonance in Medicine. 2024;92(4):1768-1787. doi:10.1002/mrm.30150
+
+    Parameters:
+    ----------
+    pt_raw (np.array): Complex PT signal of shape (n_samples, n_channels).
+    
+    Returns:
+    ----------
+    pt_raw_mag (np.array): Zero mean magnitude of the PT signal.
+    pt_raw_ang (np.array): Phase of the PT signal.
+    '''
+    n_ch = pt_raw.shape[1]
+
+    def Sr(r, n_ch):
+        S_ = np.zeros((n_ch, n_ch))
+        S_[:, r] = -1
+        return S_
+    
+    def Xphr(X, r):
+        return np.angle(X[..., r].conj()[:, None]*X)
+
+    def Xph(X, n_ch):
+        return np.concatenate([Xphr(X, r) for r in range(n_ch)], axis=1)
+
+    P = np.zeros((n_ch*n_ch, n_ch))
+
+    for ch_ in range(n_ch):
+        P[ch_*n_ch:(ch_+1)*n_ch, :] = np.eye(n_ch) + Sr(ch_, n_ch)
+
+    Pinv = np.linalg.pinv(P)
+
+    Xph_ = Xph(pt_raw, n_ch)
+    pt_raw_ang = (Pinv @ Xph_.T).T
+    pt_raw_ang = np.squeeze(pt_raw_ang - np.mean(pt_raw_ang, axis=0, keepdims=True))
+
+    pt_raw_mag = np.abs(pt_raw)
+    pt_raw_mag = np.squeeze(pt_raw_mag - np.mean(pt_raw_mag, axis=0, keepdims=True))
+
+    return pt_raw_mag, pt_raw_ang
