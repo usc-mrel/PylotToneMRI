@@ -399,7 +399,7 @@ def extract_pilottone_navs(pt_sig, f_samp: float, params: dict):
         pt_cardiac = U*S
         pt_cardiac = pt_cardiac[:,0]
     elif params['cardiac']['separation_method'] == 'sobi':
-        pt_cardiac, _, Vcard = sobi(pt_cardiac_freqs[:,accept_list_cardiac].T, num_lags=375)
+        pt_cardiac, _, Vcard = sobi(pt_cardiac_freqs[:,accept_list_cardiac].T, num_lags=params['cardiac']['num_lags'])
         from pilottone.signal import cfftn
         # Determine which channel is the cardiac by looking at the frequency content
         df = f_samp/n_pt_samp

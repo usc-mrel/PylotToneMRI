@@ -146,7 +146,7 @@ def read_mrd(ismrmrd_data_fullpath: str) -> tuple[list[ismrmrd.Acquisition], lis
     start = time.time()
     print(f'Reading {ismrmrd_data_fullpath}...')
 
-    with ismrmrd.File(ismrmrd_data_fullpath) as mrd:
+    with ismrmrd.File(ismrmrd_data_fullpath, mode='r') as mrd:
         if mrd['dataset'].has_acquisitions():
             print('Reading acquisitions...')
             # Read all acquisitions from the dataset
@@ -169,8 +169,8 @@ def read_mrd(ismrmrd_data_fullpath: str) -> tuple[list[ismrmrd.Acquisition], lis
     
     return acq_list, wf_list, hdr
 
-def read_csm(ismrmrd_noise_fullpath: str) -> tuple[np.ndarray, np.ndarray, ismrmrd.xsd.ismrmrdHeader]:
-    '''Reads the coil sensitivity maps from an ISMRMRD dataset.
+def read_adj(ismrmrd_noise_fullpath: str) -> tuple[np.ndarray, np.ndarray, np.ndarray, ismrmrd.xsd.ismrmrdHeader]:
+    '''Reads the coil sensitivity maps and noise from an ISMRMRD dataset.
         Parameters
         ----------
         ismrmrd_noise_fullpath : str
@@ -188,6 +188,9 @@ def read_csm(ismrmrd_noise_fullpath: str) -> tuple[np.ndarray, np.ndarray, ismrm
 
     acq_list_noise, _, hdr_noise = read_mrd(ismrmrd_noise_fullpath)
     acq_csm = [acq_ for acq_ in acq_list_noise if acq_.isFlagSet(ismrmrd.ACQ_IS_SURFACECOILCORRECTIONSCAN_DATA)]
+    acq_noise = [acq_.data for acq_ in acq_list_noise if acq_.isFlagSet(ismrmrd.ACQ_IS_NOISE_MEASUREMENT)]
+    noise = np.transpose(np.asarray(acq_noise), (1,0,2)).reshape((acq_noise[0].shape[0], -1))
+
     print(f"Number of CSMs: {len(acq_csm)}")
     n_pe = hdr_noise.encoding[0].encodingLimits.kspace_encoding_step_1.maximum + 1
     n_par = hdr_noise.encoding[0].encodingLimits.kspace_encoding_step_2.maximum + 1
@@ -211,4 +214,4 @@ def read_csm(ismrmrd_noise_fullpath: str) -> tuple[np.ndarray, np.ndarray, ismrm
     data_bc = np.pad(data_bc, ((0,), (0,), ((hdr_noise.encoding[0].encodedSpace.matrixSize.y - n_pe)//2,), ((hdr_noise.encoding[0].encodedSpace.matrixSize.z - n_par)//2,)))
     data_csm = np.pad(data_csm, ((0,), (0,), ((hdr_noise.encoding[0].encodedSpace.matrixSize.y - n_pe)//2,), ((hdr_noise.encoding[0].encodedSpace.matrixSize.z - n_par)//2,)))
 
-    return data_csm, data_bc, hdr_noise
+    return data_csm, data_bc, noise, hdr_noise

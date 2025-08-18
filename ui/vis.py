@@ -304,8 +304,100 @@ class SignalInterferenceFreehandSegmenter:
         signal_mask[:,:,:] = signal_mask[slc_i,:,:]
         return signal_mask, interference_mask
 
+class PickPixel4Correlation:
+    """Interactive viewer for 3D volumes with slice selection and coordinate printing."""
+    
+    def __init__(self, volume_show: np.ndarray, volume_use:np.ndarray, coil_names: list, ref_vals: np.array, cmap: str = 'gray',
+                 vmin: float = None, vmax: float = None,
+                 figsize: tuple = (12, 8)):
+        """
+        Initialize volume viewer.
+        
+        Parameters
+        ----------
+        volume : np.ndarray
+            4D volume data to display (z, y, x, c)
+        cmap : str
+            Colormap for display
+        vmin, vmax : float
+            Display window min/max values
+        figsize : tuple
+            Figure size in inches
+        """
+        self.volume_s = volume_show
+        self.volume = volume_use
+        self.cmap = cmap
+        self.coil_names = coil_names
+        self.ref_vals = ref_vals
+        
+        # Calculate display window if not provided
+        if vmin is None:
+            vmin = np.percentile(self.volume_s, 5)
+        if vmax is None:
+            vmax = np.percentile(self.volume_s, 95)
+        self.vmin = vmin
+        self.vmax = vmax
+        
+        # Create figure and axes
+        self.fig, self.ax = plt.subplots(1,2 ,figsize=figsize)
+        self.fig.canvas.header_visible = False
+        
+        # Create slice slider
+        self.slice_slider = widgets.IntSlider(
+            value=volume_show.shape[0]//2,
+            min=0,
+            max=volume_show.shape[0]-1,
+            description='Slice:',
+            continuous_update=True
+        )
+        
+        # Display initial slice
+        self.img = self.ax[0].imshow(
+            self.volume_s[self.slice_slider.value],
+            cmap=self.cmap,
+            vmin=self.vmin,
+            vmax=self.vmax
+        )
+        
+        # Set up callbacks
+        self.slice_slider.observe(self._update_slice, names='value')
+        self.fig.canvas.mpl_connect('button_press_event', self._onclick)
+        
+        # Set axis labels
+        self.ax[0].set_xlabel('X')
+        self.ax[0].set_ylabel('Y')
+        self.ax[1].plot(ref_vals/ref_vals.max(), np.arange(len(self.coil_names)), 'x')
 
-def ndv(data, ax: matplotlib.axes.Axes = None,  YX = [-2,-1], voxel_shape=None, slider_values=None, clim=None, figsize=None, **kwargs):
+        self.plt, = self.ax[1].plot(np.zeros_like(np.arange(len(self.coil_names)), dtype=np.float64), np.arange(len(self.coil_names)), 'o')
+
+        self.ax[1].set_yticks(np.arange(len(coil_names)), coil_names)
+
+        
+    def _update_slice(self, change):
+        """Update displayed slice when slider changes."""
+        self.img.set_data(self.volume_s[change['new']])
+        self.ax[0].set_title(f'Slice {change["new"]}')
+        self.fig.canvas.draw_idle()
+        
+    def _onclick(self, event):
+        """Handle mouse click events."""
+        if event.inaxes == self.ax[0]:
+            x, y = int(event.xdata), int(event.ydata)
+            z = self.slice_slider.value
+            val = self.volume[z, y, x, :]
+            self.plt.set_xdata(val/val.max())
+            self.ax[1].set_xlim(0, (val/val.max()).max()*1.1)
+            cc_ = np.corrcoef(self.ref_vals, val)[0, 1]
+            self.ax[1].set_title(f'Correlation with reference: {cc_:.3f}.')
+            # self.ax.set_title(f'Slice {z} - Clicked at ({y}, {x})')
+            # print(f'Clicked coordinates (z,y,x): ({z},{y},{x}), value: {val:.3f}')
+            
+    def show(self):
+        """Display the interactive viewer."""
+        display(self.slice_slider)
+        plt.show()
+
+def ndv(data, ax: matplotlib.axes.Axes = None,  YX = [-2,-1], voxel_shape=None,  overlay_img=None, overlay_cmap='gray', colorbar=False, slider_values=None, clim=None, figsize=None, **kwargs):
     '''
     Opens a multi-dimensional array viewer widget in Jupyter
 
@@ -326,6 +418,10 @@ def ndv(data, ax: matplotlib.axes.Axes = None,  YX = [-2,-1], voxel_shape=None, 
     if ax is None:
         fig = plt.figure(figsize=figsize)
         ax = fig.add_subplot(111)
+
+    if overlay_img is not None:
+        if overlay_img.shape != data.shape:
+            raise ValueError("Overlay image must have the same shape as the data.")
     
     plt.show()
     if not clim: 
@@ -333,6 +429,7 @@ def ndv(data, ax: matplotlib.axes.Axes = None,  YX = [-2,-1], voxel_shape=None, 
     if not slider_values: 
         slider_values = [0 for i in range(len(dims))]
     im = []
+    im_overlay = []
     sliders = []
     
     def rbCallback(event=None):
@@ -350,6 +447,8 @@ def ndv(data, ax: matplotlib.axes.Axes = None,  YX = [-2,-1], voxel_shape=None, 
 
     def sliderCallback(event=None):
         im.set_data(getslice())
+        if overlay_img is not None:
+            im_overlay.set_data(getslice_overlay())
         ax.figure.canvas.draw_idle()
 
     def getslice():
@@ -361,11 +460,29 @@ def ndv(data, ax: matplotlib.axes.Axes = None,  YX = [-2,-1], voxel_shape=None, 
             out = out.T
         return out
 
+    def getslice_overlay():
+        subs = [sliders[i].value for i in range(len(sliders))]
+        subs[rbY.value] = slice(None)
+        subs[rbX.value] = slice(None)
+        out = overlay_img[tuple(subs)]
+        if rbX.value < rbY.value: 
+            out = out.T
+        return out
+
+
     def refreshimage():
         nonlocal im
+        nonlocal im_overlay
         aspect = voxel_shape[rbY.value]/voxel_shape[rbX.value] if voxel_shape is not None else 'auto'
-        im = ax.imshow(getslice(), aspect=aspect, vmin=clim_slider.value[0], vmax=clim_slider.value[1], **kwargs)
-        
+        if overlay_img is not None:
+            im_overlay = ax.imshow(getslice_overlay(), cmap=overlay_cmap, aspect=aspect, vmin=overlay_img.min(), vmax=overlay_img.max())
+            im = ax.imshow(getslice(), alpha=0.5, aspect=aspect, vmin=clim_slider.value[0], vmax=clim_slider.value[1], **kwargs)
+        else:
+            im = ax.imshow(getslice(), aspect=aspect, vmin=clim_slider.value[0], vmax=clim_slider.value[1], **kwargs)
+
+        if colorbar:
+            plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+
     def clim_sliderCallback(event):
         im.set_clim(clim_slider.value)
     

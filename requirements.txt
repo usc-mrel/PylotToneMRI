@@ -1,7 +1,7 @@
 ismrmrd
 matplotlib     # used by rgb.py and provides various visualization tools including colormaps
 numpy
-pyside2       # For UI in respiratory_from_image.py
+pyside6       # For UI in respiratory_from_image.py
 ipykernel
 ipympl
 pandas
@@ -10,4 +10,5 @@ hyperspy
 rtoml
 pip
 mpl-interactions # For custom ROI in noise_graph_from_series.ipynb
+mpl-image-segmenter
 cupy-cuda12x # For GPU acceleration at EDITER processing.
