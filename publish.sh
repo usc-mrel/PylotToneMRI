@@ -12,7 +12,8 @@ fi
 COMMIT_MSG="$1"
 PUBLIC_REMOTE="public"
 PUBLIC_BRANCH="main"
-PUBLIC_REPO="git@github.com:USERNAME/PUBLIC-REPO.git"
+PUBLIC_REPO="git@github.com:usc-mrel/PylotToneMRI.git"
+EXCLUDE_FILE="$OLDPWD/publish-exclude.txt"  # Optional file listing tracked files to exclude
 
 # Ensure public remote exists
 if ! git remote | grep -q "$PUBLIC_REMOTE"; then
@@ -25,19 +26,29 @@ git clone --depth 1 $PUBLIC_REPO $TMPDIR
 cd $TMPDIR
 git checkout $PUBLIC_BRANCH || git checkout --orphan $PUBLIC_BRANCH
 
-# Copy current code from private repo (without .git)
-rsync -a --exclude='.git' "$OLDPWD/" ./
+# Get list of tracked files from private repo
+git -C "$OLDPWD" ls-files > /tmp/tracked.txt
+
+# If an exclude file exists, tell rsync to skip those tracked files
+EXCLUDE_ARG=""
+if [ -f "$EXCLUDE_FILE" ]; then
+  EXCLUDE_ARG="--exclude-from=$EXCLUDE_FILE"
+fi
+
+echo Copying tracked files to temporary repo...
+# Copy tracked files to public repo, excluding .git and any exclude list
+rsync -a --files-from=/tmp/tracked.txt $EXCLUDE_ARG --exclude='.git' "$OLDPWD/" ./
 
 # Add all files and create a new commit
 git add -A
 git commit -m "$COMMIT_MSG"
 
-# Push new commit
+# Push new commit to public repo (normal push, accumulates snapshots)
 git push $PUBLIC_REMOTE $PUBLIC_BRANCH
 
 # Clean up
 cd "$OLDPWD"
-rm -rf $TMPDIR
+rm -rf $TMPDIR /tmp/tracked.txt
 
 echo "✅ Published snapshot to $PUBLIC_REPO with message:"
 echo "   \"$COMMIT_MSG\""
