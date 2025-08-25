@@ -12,35 +12,32 @@ fi
 COMMIT_MSG="$1"
 PUBLIC_REMOTE="public"
 PUBLIC_BRANCH="main"
-PUBLIC_REPO="git@github.com:usc-mrel/PylotToneMRI.git"
+PUBLIC_REPO="git@github.com:USERNAME/PUBLIC-REPO.git"
 
-# Ensure we’re on the right branch
-git checkout main
-
-# Make sure the public remote exists
+# Ensure public remote exists
 if ! git remote | grep -q "$PUBLIC_REMOTE"; then
   git remote add $PUBLIC_REMOTE $PUBLIC_REPO
 fi
 
-# Fetch the latest commit from public repo (if it exists)
-git fetch $PUBLIC_REMOTE $PUBLIC_BRANCH || true
+# Create a temporary directory for public repo operations
+TMPDIR=$(mktemp -d)
+git clone --depth 1 $PUBLIC_REPO $TMPDIR
+cd $TMPDIR
+git checkout $PUBLIC_BRANCH || git checkout --orphan $PUBLIC_BRANCH
 
-# Parent commit = last commit in public repo (if any)
-PARENT=$(git rev-parse $PUBLIC_REMOTE/$PUBLIC_BRANCH 2>/dev/null || echo "")
+# Copy current code from private repo (without .git)
+rsync -a --exclude='.git' "$OLDPWD/" ./
 
-if [ -n "$PARENT" ]; then
-  echo "ℹ️ Found parent commit $PARENT from public repo"
-  NEW_COMMIT=$(git commit-tree HEAD^{tree} -p $PARENT -m "$COMMIT_MSG")
-else
-  echo "ℹ️ No parent found — creating first snapshot commit"
-  NEW_COMMIT=$(git commit-tree HEAD^{tree} -m "$COMMIT_MSG")
-fi
+# Add all files and create a new commit
+git add -A
+git commit -m "$COMMIT_MSG"
 
-# Move branch pointer to new commit
-git update-ref refs/heads/$PUBLIC_BRANCH $NEW_COMMIT
-
-# Push normally (no force needed)
+# Push new commit
 git push $PUBLIC_REMOTE $PUBLIC_BRANCH
+
+# Clean up
+cd "$OLDPWD"
+rm -rf $TMPDIR
 
 echo "✅ Published snapshot to $PUBLIC_REPO with message:"
 echo "   \"$COMMIT_MSG\""
