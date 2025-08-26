@@ -1,6 +1,7 @@
 # %%
 import argparse
 import multiprocessing as mp
+from multiprocessing import shared_memory
 import os
 import time
 from pathlib import Path
@@ -18,11 +19,28 @@ from pylottone.selectionui import get_multiple_filepaths
 from pylottone.trajectory import remove_readout_os
 
 
-def process_channel(ch):
+def process_channel_shared(args):
+    """Process a single channel using shared memory arrays."""
+    ch, ksp_shm_name, ksp_shape, ksp_dtype, sniffer_shm_name, sniffer_shape, sniffer_dtype, editer_params, w = args
+    
+    # Attach to shared memory
+    ksp_shm = shared_memory.SharedMemory(name=ksp_shm_name)
+    ksp_measured = np.ndarray(ksp_shape, dtype=ksp_dtype, buffer=ksp_shm.buf)
+    
+    sniffer_shm = shared_memory.SharedMemory(name=sniffer_shm_name)
+    ksp_sniffer2 = np.ndarray(sniffer_shape, dtype=sniffer_dtype, buffer=sniffer_shm.buf)
+    
+    # Process the channel
     est_emi_ch, _ = apply_editer(ksp_measured[:, :, ch], ksp_sniffer2, editer_params, w)
+    
+    # Clean up
+    ksp_shm.close()
+    sniffer_shm.close()
+    
     return est_emi_ch
 
 def main(ismrmrd_data_fullpath, cfg) -> str:
+    mp.set_start_method('spawn', force=True)
     DATA_ROOT = cfg['DATA_ROOT']
     DATA_DIR = cfg['data_folder']
     prewhiten = cfg['editer']['prewhiten']
@@ -32,10 +50,6 @@ def main(ismrmrd_data_fullpath, cfg) -> str:
     raw_file = ismrmrd_data_fullpath.split('/')[-1]
     ismrmrd_data_fullpath, ismrmrd_noise_fullpath = mrdhelper.siemens_mrd_finder(DATA_ROOT, DATA_DIR, raw_file)
 
-    # We are making these global to avoid passing them to the multiprocessing pool
-    # otherwise they get copied to each process and it takes a long time and lots of memory.
-    # It is an ugly hack, but keeps the code much simpler.
-    global ksp_measured, ksp_sniffer2, editer_params, w
     # %%
     # Read the data in
     acq_list, wf_list, hdr = mrdhelper.read_mrd(ismrmrd_data_fullpath)
@@ -163,10 +177,32 @@ def main(ismrmrd_data_fullpath, cfg) -> str:
 
     chs = range(ksp_measured.shape[2])
 
+    # Create shared memory for large arrays
+    ksp_shm = shared_memory.SharedMemory(create=True, size=ksp_measured.nbytes)
+    ksp_shared = np.ndarray(ksp_measured.shape, dtype=ksp_measured.dtype, buffer=ksp_shm.buf)
+    ksp_shared[:] = ksp_measured[:]
+    
+    sniffer_shm = shared_memory.SharedMemory(create=True, size=ksp_sniffer2.nbytes)
+    sniffer_shared = np.ndarray(ksp_sniffer2.shape, dtype=ksp_sniffer2.dtype, buffer=sniffer_shm.buf)
+    sniffer_shared[:] = ksp_sniffer2[:]
+    
+    # Prepare arguments for each process
+    process_args = [
+        (ch, ksp_shm.name, ksp_measured.shape, ksp_measured.dtype,
+         sniffer_shm.name, ksp_sniffer2.shape, ksp_sniffer2.dtype,
+         editer_params, w)
+        for ch in chs
+    ]
 
-
-    with mp.Pool(processes=len(chs)//2) as pool:
-        results = pool.map(process_channel, chs)
+    try:
+        with mp.Pool(processes=len(chs)//2) as pool:
+            results = pool.map(process_channel_shared, process_args)
+    finally:
+        # Clean up shared memory
+        ksp_shm.close()
+        ksp_shm.unlink()
+        sniffer_shm.close()
+        sniffer_shm.unlink()
 
     emi_hat = np.stack(results, axis=2)
     ksp_emicorr = ksp_measured - emi_hat
