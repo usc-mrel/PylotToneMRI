@@ -1,9 +1,11 @@
+import copy
 from pylottone.constants import ECG_WAVEFORM_ID, PILOTTONE_WAVEFORM_ID, PILOTTONE_CH
 import ismrmrd
 import numpy as np
 import os
 import fnmatch
 import warnings
+import re
 
 def siemens_mrd_finder(data_root: str, data_folder: str, raw_file: str, h5folderext: str = '', rawfile_ext: str = '') -> str:
     """
@@ -169,3 +171,81 @@ def read_mrd(ismrmrd_data_fullpath: str) -> tuple[list[ismrmrd.Acquisition], lis
         hdr = ismrmrd.xsd.CreateFromDocument(dset.read_xml_header())
     
     return acq_list, wf_list, hdr
+
+def get_volt_from_protoname(proto_name: str) -> float:
+    """
+    Extract the PT volt if written in the protocol name as _XXXV_ or _XXXmV_.
+    
+    Parameters:
+    proto_name (str): Protocol name containing the voltage information.
+    
+    Returns:
+    pt_volt (float): Extracted voltage in volts (V). Returns NaN if no voltage information is found.
+    """
+    proto_fields = proto_name.lower().split('_')
+    pt_volt = np.nan
+    
+    for fld in proto_fields:
+        if 'mv' in fld:
+            vval = re.findall(r'\d+\.?\d*', fld)
+            if not vval:
+                continue
+            pt_volt = float(vval[0]) * 1e-3
+            break
+
+        if 'v' in fld:
+            vval = re.findall(r'\d+\.?\d*', fld)
+            if not vval:
+                continue
+            pt_volt = float(vval[0])
+            break
+
+    if np.isnan(pt_volt):
+        print('Could not extract PT voltage from the protocol name.')
+
+    return pt_volt
+
+def save_processed_raw_data(output_data_fullpath: str, 
+                               hdr: ismrmrd.xsd.ismrmrdHeader, acq_list: list[ismrmrd.Acquisition], wf_list: list[ismrmrd.Waveform], 
+                               ksp_processed: np.ndarray, mri_coils: np.ndarray, pt_wf: None | ismrmrd.Waveform = None, user_params: dict = {}) -> None:
+
+    # Update new parameters to XML header.
+    new_hdr = copy.deepcopy(hdr)
+
+    for param_name, param_value in user_params.items():
+        if type(param_value) is str:
+            new_hdr.userParameters.userParameterString.append(ismrmrd.xsd.userParameterStringType(param_name, param_value))
+        elif type(param_value) is int:
+            new_hdr.userParameters.userParameterLong.append(ismrmrd.xsd.userParameterLongType(param_name, param_value))
+        else:
+            print(f'Parameter {param_name} with type {type(param_value)} is not supported. Skipping...')
+
+    # new_hdr.userParameters.userParameterString.append(ismrmrd.xsd.userParameterStringType('processing', 'ModelSubtraction'))
+    new_hdr.acquisitionSystemInformation.coilLabel = [hdr.acquisitionSystemInformation.coilLabel[ch_i] for ch_i in mri_coils]
+    new_hdr.acquisitionSystemInformation.receiverChannels = len(new_hdr.acquisitionSystemInformation.coilLabel)
+
+    # Copy and fix acquisition objects
+    new_acq_list = []
+    remove_os = True if ksp_processed.shape[0]*2 == acq_list[0].getHead().number_of_samples else False
+
+    for acq_i, acq_ in enumerate(acq_list):
+        new_head = copy.deepcopy(acq_.getHead())
+        new_head.active_channels = len(new_hdr.acquisitionSystemInformation.coilLabel)
+        new_head.available_channels = len(new_hdr.acquisitionSystemInformation.coilLabel)
+        if remove_os:
+            new_head.number_of_samples = ksp_processed.shape[0]
+            new_head.center_sample = 5
+
+        new_acq_list.append(ismrmrd.Acquisition(head=new_head, data=np.ascontiguousarray(ksp_processed[:,acq_i,:].squeeze().T.astype(np.complex64))))
+
+    with ismrmrd.Dataset(output_data_fullpath, create_if_needed=True) as new_dset:
+        for acq_ in new_acq_list:
+            new_dset.append_acquisition(acq_)
+
+        for wave_ in wf_list:
+            new_dset.append_waveform(wave_)
+
+        if pt_wf:
+            new_dset.append_waveform(pt_wf)
+
+        new_dset.write_xml_header(ismrmrd.xsd.ToXML(new_hdr))

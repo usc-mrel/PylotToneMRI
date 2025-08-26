@@ -1,12 +1,96 @@
-import datetime
-import os
-import rtoml
 import numpy as np
-
-from pylottone import beat_rejection, interval_peak_matching, get_volt_from_protoname
-import pylottone.mrdhelper as mrdhelper
 from scipy.signal import find_peaks
-from pylottone.selectionui import get_multiple_filepaths
+
+def beat_rejection(pktimes, padloc, pkamps=None):
+    '''Rejects the "bad beats", that are 3*std away from the mean
+    heart rate, and optionally peaks that have amplitude at least 3*std away 
+    from the mean amplitude.
+    '''
+    hr_perpeak = 60./np.diff(pktimes)
+    hr_variation = np.std(hr_perpeak)
+    hr_mean = np.mean(hr_perpeak)
+    hr_diffs = hr_perpeak - hr_mean
+    if padloc == "pre":
+        hr_accept_list = np.hstack((1, abs(hr_diffs)<(3*hr_variation)))
+    elif padloc == "post":
+        hr_accept_list = np.hstack((abs(hr_diffs)<(3*hr_variation), 1))
+    
+    if pkamps is not None:
+        mean_ptpk = np.mean(pkamps(hr_accept_list))
+        ptpk_variation = np.std(pkamps(hr_accept_list))
+        hr_accept_list = hr_accept_list & (np.abs(pkamps-mean_ptpk) < 3*ptpk_variation)
+    
+    return hr_accept_list
+
+
+def prepeak_matching(time_pt, pt_cardiac_peak_locs, time_ecg, ecg_peak_locs):
+    # Somewhat working immediately preceding peak matching algo.
+
+    t_first_ecg_pk = time_ecg[ecg_peak_locs[0]]
+    idx_first_pt_after_ecg = np.nonzero(time_pt[pt_cardiac_peak_locs] > t_first_ecg_pk)[0][0]
+    pt_peaks_selected = pt_cardiac_peak_locs[idx_first_pt_after_ecg:]
+    ecg_peaks_selected = ecg_peak_locs[:len(pt_peaks_selected)]
+
+    # # Reject bad beats
+    # ptPeaksSelected = ptPeaksSelected(hrAcceptList(idx_first_pt_after_ecg:end))
+    # ecgPeaksSelected = ecgPeaksSelected(hrAcceptList(idx_first_pt_after_ecg:end))
+
+    peak_diff = time_pt[pt_peaks_selected] - time_ecg[ecg_peaks_selected]
+    return peak_diff, pt_peaks_selected
+
+def interval_peak_matching(time_pt, pt_cardiac_peak_locs, time_ecg, ecg_peak_locs):
+
+    # Iterate over ECG peaks, and check if there is a PT peak between current and next ECG peak.
+    pt_trig_wf = np.zeros(time_pt.shape, dtype=int)
+    pt_trig_wf[pt_cardiac_peak_locs] = 1
+    peak_diff = []
+    extra_pk_idx = []
+    miss_pk_idx = []
+
+    n_ecg_pk = ecg_peak_locs.shape[0]
+    for pk_i in range(n_ecg_pk-1):
+        curr_pk_t = time_ecg[ecg_peak_locs[pk_i]]
+        next_pk_t = time_ecg[ecg_peak_locs[pk_i+1]]
+
+        masked_pt_trig = pt_trig_wf & ((time_pt > curr_pk_t) & (time_pt < next_pk_t))
+
+        n_trig_per_trig = np.sum(masked_pt_trig)
+        if n_trig_per_trig == 0:
+            # Missed beat, nothing to do, move on.
+            miss_pk_idx.append(pk_i)
+            continue
+        elif n_trig_per_trig > 1:
+            # Extraneous trigger, not cool. Mark, but still accept the first one.
+            extra_pk_idx.append(pk_i)
+        
+        pt_peak_idx = np.nonzero(masked_pt_trig)[0][0]
+        peak_diff.append(time_pt[pt_peak_idx] - curr_pk_t)
+
+    return np.asarray(peak_diff), np.asarray(miss_pk_idx), np.asarray(extra_pk_idx)
+
+def extract_triggers(time_pt, cardiac_waveform, skip_time=0.6, prominence=0.4, max_hr=120):
+    ''' Extract triggers from the cardiac waveform.
+        Parameters:
+            time_pt: np.array
+                Time points for the cardiac waveform.
+            cardiac_waveform: np.array
+                Cardiac waveform.
+            skip_time: float
+                Time to skip at the beginning of the waveform.
+        Returns:
+            pt_cardiac_trigs: np.array
+                Trigger waveform.
+    '''
+    dt_pt = (time_pt[1] - time_pt[0])
+    Dmin = int(np.ceil((60/max_hr)/(dt_pt))) # Min distance between two peaks, should not be less than 0.6 secs (100 bpm max assumed)
+    pt_cardiac_peak_locs,_ = find_peaks(cardiac_waveform[time_pt > skip_time], prominence=prominence, distance=Dmin)
+    pt_cardiac_peak_locs += np.sum(time_pt <= skip_time)
+    pt_peaks_selected = pt_cardiac_peak_locs
+    n_acq = time_pt.shape[0]
+    pt_cardiac_trigs = np.zeros((n_acq,), dtype=np.uint32)
+    pt_cardiac_trigs[pt_peaks_selected] = 1
+
+    return pt_cardiac_trigs
 
 def pt_ecg_jitter(time_pt, pt_cardiac, pt_cardiac_derivative, time_ecg, ecg_waveform, pt_cardiac_trigs=None, pt_derivative_trigs=None, ecg_trigs=None, skip_time=0.6, max_hr=120, show_outputs=True): 
     """ 
@@ -205,124 +289,3 @@ def calculate_jitter(time_pt, pt_cardiac, time_ecg, ecg_waveform, pt_cardiac_tri
     pt_cardiac_trigs[pt_peaks_selected] = 1
     
     return peak_diff, miss_pks, extra_pks
-
-def print_pt_confusion_table(pt_stats, raw_files, title='Pilot Tone Confusion Table'):
-    print('| {:^70} |'.format(title))
-    print('| {:^10} | {:>15} | {:>15} | {:>15} |'.format('PT Voltage', 'Number of ECG triggers', 'False Negative', 'False Positive'))
-    for raw_file in raw_files:
-        row = [pt_stats[raw_file][0], np.sum(pt_stats[raw_file][-1]), len(pt_stats[raw_file][2]), len(pt_stats[raw_file][3])]
-        print('| {:^10} | {:>20} | {:>15} | {:>15} |'.format(*row))
-
-if __name__ == '__main__':
-
-    import matplotlib
-    matplotlib.use('QtAgg')
-    import matplotlib.pyplot as plt
-    # Read config
-    with open('config.toml', 'r') as cf:
-        cfg = rtoml.load(cf)
-
-    filepaths = get_multiple_filepaths(dir=cfg['DATA_ROOT'])
-    dataset_dir = os.path.join('/', *(os.path.dirname(filepaths[0]).split('/')[:-2]))
-    DATA_ROOT = os.path.dirname(dataset_dir)
-    DATA_DIR = os.path.basename(dataset_dir)
-    raw_files = [os.path.basename(filepath) for filepath in filepaths]
-
-    pt_stats = {}
-    dpt_stats = {}
-
-    for raw_file in raw_files:
-        ismrmrd_data_fullpath, _ = mrdhelper.siemens_mrd_finder(DATA_ROOT, DATA_DIR, raw_file)
-        ptvolt = get_volt_from_protoname(ismrmrd_data_fullpath.split('/')[-1])
-        # Read the data in
-        wf_list, _ = mrdhelper.read_waveforms(ismrmrd_data_fullpath)
-
-        ecg_, pt_ = mrdhelper.waveforms_asarray(wf_list)
-        ecg_waveform = ecg_['ecg_waveform']
-        ecg_waveform /= np.percentile(ecg_waveform, 99.9)
-        ecg_trigs = ecg_['ecg_trigs']
-        time_ecg = ecg_['time_ecg']
-
-        pt_cardiac_trigs = pt_['pt_cardiac_trigs']
-        pt_derivative_trigs = pt_['pt_derivative_trigs']
-        pt_cardiac = pt_['pt_cardiac']
-        pt_cardiac_derivative = pt_['pt_cardiac_derivative']
-        pt_cardiac[:20] = pt_cardiac[20]
-        pt_cardiac[-20:] = pt_cardiac[-20]
-        pt_cardiac -= np.percentile(pt_cardiac, 10)
-        pt_cardiac /= np.percentile(pt_cardiac, 95)
-        pt_cardiac_derivative[:20] = pt_cardiac_derivative[20]
-        pt_cardiac_derivative[-20:] = pt_cardiac_derivative[-20]
-        pt_cardiac_derivative -= np.percentile(pt_cardiac_derivative, 10)
-        pt_cardiac_derivative /= np.percentile(pt_cardiac_derivative, 98)
-
-        time_pt = pt_['time_pt']
-
-        # Shift the time axes for our mortal brains
-        t_ref = min(time_ecg[0], time_pt[0])
-        time_ecg -= t_ref
-        time_pt -= t_ref
-
-        # plt.figure()
-        # plt.plot(time_ecg, ecg_waveform)
-        # plt.plot(time_ecg[ecg_trigs==1], ecg_waveform[ecg_trigs==1], '*')
-        # plt.plot(time_pt, pt_cardiac)
-        # plt.plot(time_pt[pt_cardiac_trigs==1], pt_cardiac[pt_cardiac_trigs==1], 'x', label='PT Triggers')
-        # plt.show()
-        skip_time = 1.5
-        print(f'ECG trigs: {np.sum(ecg_trigs[time_ecg > skip_time])}')
-
-        pt_stats_ = calculate_jitter(time_pt, pt_cardiac, time_ecg, ecg_waveform, ecg_trigs=ecg_trigs, 
-                                    #  pt_cardiac_trigs=pt_cardiac_trigs, 
-                                     skip_time=skip_time, peak_prominence=0.4, max_hr=160)
-        dpt_stats_ = calculate_jitter(time_pt, pt_cardiac_derivative, time_ecg, ecg_waveform, ecg_trigs=ecg_trigs, 
-                                    #   pt_cardiac_trigs=pt_derivative_trigs, 
-                                      skip_time=skip_time, peak_prominence=0.5, max_hr=160)
-
-        pt_stats[raw_file] = (ptvolt,*pt_stats_, ecg_trigs[time_ecg > skip_time])
-        dpt_stats[raw_file] = (ptvolt,*dpt_stats_, ecg_trigs[time_ecg > skip_time])
-
-    jitter = np.array([np.std(pt_stats[raw_file][1]) for raw_file in raw_files])
-    mean_delay = np.array([np.mean(pt_stats[raw_file][1]) for raw_file in raw_files])
-
-    dpt_jitter = np.array([np.std(dpt_stats[raw_file][1]) for raw_file in raw_files])
-    dpt_mean_delay = np.array([np.mean(dpt_stats[raw_file][1]) for raw_file in raw_files])
-    ptvolts = np.array([dpt_stats[raw_file][0] for raw_file in raw_files])
-    pt_sampling_time_ms = pt_['pt_sampling_time']*1e3
-
-    # Print table of the false negatives and false positives
-    print_pt_confusion_table(pt_stats, raw_files)
-    print_pt_confusion_table(dpt_stats, raw_files, title='Derivative Pilot Tone Confusion Table')
-
-    # Plot the jitter and mean delays
-    f, axs = plt.subplots(2,2)
-    axs[0,0].plot(ptvolts, jitter*1e3, 'o', label='Jitter')
-    axs[0,0].set_xlim([0, 1.6])
-    axs[0,0].set_xlabel('Pilot Tone Voltage [V]')
-    axs[0,0].set_ylabel('Jitter [ms]')
-    axs[0,0].set_title('Jitter vs PT Voltage')
-    axs[0,0].set_ylim([0, 25])
-    # axs[0,0].axhline(y=pt_sampling_time_ms*2, xmin=0, xmax=1, color='red', linestyle='--', label='2x PT Sampling Period', alpha=0.7)
-
-    axs[1,0].plot(ptvolts, mean_delay*1e3, 'o')
-    axs[1,0].set_xlabel('Pilot Tone Voltage [V]')
-    axs[1,0].set_ylabel('Mean Delay [ms]')
-    axs[1,0].set_title('Mean Delay vs PT Voltage')
-
-    axs[0,1].plot(ptvolts, dpt_jitter*1e3, 'o')
-    axs[0,1].set_xlabel('Pilot Tone Voltage [V]')
-    axs[0,1].set_ylabel('Jitter [ms]')
-    axs[0,1].set_title('Jitter vs Inverse Derivative PT Voltage')
-    axs[0,1].set_ylim([0, 25])
-
-    # axs[0,1].axhline(y=pt_sampling_time_ms*2, xmin=0, xmax=1, color='red', linestyle='--', label='2x PT Sampling Period', alpha=0.7)
-
-    axs[1,1].plot(ptvolts, dpt_mean_delay*1e3, 'o')
-    axs[1,1].set_xlabel('Pilot Tone Voltage [V]')
-    axs[1,1].set_ylabel('Mean Delay [ms]')
-    axs[1,1].set_title('Mean Delay vs Inverse Derivative PT Voltage')
-
-    plt.show()
-
-    np.savez_compressed(os.path.join('output_recons', DATA_DIR, f'jitter_{datetime.datetime.now()}.npz'), 
-                        ptvolts=ptvolts, pk_diffs=pt_stats, derivative_pk_diffs=dpt_stats, pt_sampling_time=pt_['pt_sampling_time'])

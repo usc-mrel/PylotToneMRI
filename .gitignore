@@ -4,6 +4,7 @@ config.toml
 saved_figures/
 figures/
 configs/
+*.h5
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

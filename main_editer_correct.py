@@ -1,20 +1,22 @@
 # %%
 import argparse
-import ismrmrd
-import rtoml
+import multiprocessing as mp
 import os
-from scipy.io import loadmat
-import numpy as np
-import pyfftw
+import time
 from pathlib import Path
-import copy
-from pylottone.editer import autopick_sensing_coils, apply_editer
+
+import ismrmrd
+import numpy as np
+import rtoml
+from scipy.io import loadmat
 from scipy.signal.windows import tukey
 from scipy.sparse.linalg import svds
-import time
-import multiprocessing as mp
+
 import pylottone.mrdhelper as mrdhelper
+from pylottone.editer import apply_editer, autopick_sensing_coils
 from pylottone.selectionui import get_multiple_filepaths
+from pylottone.trajectory import remove_readout_os
+
 
 def process_channel(ch):
     est_emi_ch, _ = apply_editer(ksp_measured[:, :, ch], ksp_sniffer2, editer_params, w)
@@ -36,25 +38,8 @@ def main(ismrmrd_data_fullpath, cfg) -> str:
     global ksp_measured, ksp_sniffer2, editer_params, w
     # %%
     # Read the data in
-    print(f'Reading {ismrmrd_data_fullpath}...')
-    with ismrmrd.Dataset(ismrmrd_data_fullpath) as dset:
-
-        n_acq = dset.number_of_acquisitions()
-        print(f'There are {n_acq} acquisitions in the file. Reading...')
-
-        acq_list = []
-        for ii in range(n_acq):
-            acq_list.append(dset.read_acquisition(ii))
-
-        n_wf = dset.number_of_waveforms()
-        print(f'There are {n_wf} waveforms in the dataset. Reading...')
-
-        wf_list = []
-        for ii in range(n_wf):
-            wf_list.append(dset.read_waveform(ii))
-        
-        hdr = ismrmrd.xsd.CreateFromDocument(dset.read_xml_header())
-
+    acq_list, wf_list, hdr = mrdhelper.read_mrd(ismrmrd_data_fullpath)
+    n_acq = len(acq_list)
     # get the k-space trajectory based on the metadata hash.
     traj_name = hdr.userParameters.userParameterString[1].value
 
@@ -77,13 +62,9 @@ def main(ismrmrd_data_fullpath, cfg) -> str:
     ktraj = np.swapaxes(ktraj, 0, 1)
     ktraj = 0.5 * (ktraj / kmax) * msize
 
-    data = [arm.data[:,:] for arm in acq_list]
-    coord = [ktraj[ii%n_unique_angles,:,:] for ii in range(n_acq)]
+    data = np.array([arm.data[:,:] for arm in acq_list]).transpose((2, 0, 1))
+    coord = np.array([ktraj[ii%n_unique_angles,:,:] for ii in range(n_acq)], dtype=np.float32).transpose((2, 1, 0))
 
-    data = np.array(data)
-    data = np.transpose(data, axes=(2, 0, 1))
-    coord = np.array(coord, dtype=np.float32)
-    coord = np.transpose(coord, axes=(2, 1, 0))
 
 
     # %%
@@ -106,7 +87,10 @@ def main(ismrmrd_data_fullpath, cfg) -> str:
     noise = np.transpose(np.asarray(noise_list), (1,0,2)).reshape((noise_list[0].shape[0], -1))
 
     if prewhiten:
-        from pylottone.reconstruction.coils import apply_prewhitening, calculate_prewhitening
+        from pylottone.reconstruction.coils import (
+            apply_prewhitening,
+            calculate_prewhitening,
+        )
 
         print('Prewhitening the raw data...')
         dmtx = calculate_prewhitening(noise)
@@ -196,14 +180,7 @@ def main(ismrmrd_data_fullpath, cfg) -> str:
     n_samp = ksp_emicorr.shape[0]
 
     if remove_os:
-        ksp_emicorr = pyfftw.byte_align(ksp_emicorr)
-
-        keepOS = np.concatenate([np.arange(n_samp // 4), np.arange(n_samp * 3 // 4, n_samp)])
-        ifft_ = pyfftw.builders.ifft(ksp_emicorr, n=n_samp, axis=0, threads=32, planner_effort='FFTW_ESTIMATE')
-        ksp_emicorr = ifft_()
-
-        fft_ = pyfftw.builders.fft(ksp_emicorr[keepOS, :, :], n=n_samp//2, axis=0, threads=32, planner_effort='FFTW_ESTIMATE')
-        ksp_emicorr = fft_()
+        remove_readout_os(ksp_emicorr)
         n_samp = n_samp // 2
 
 
@@ -212,38 +189,13 @@ def main(ismrmrd_data_fullpath, cfg) -> str:
     print('Saving to ' + output_data_fullpath)
 
     Path.mkdir(Path(output_dir_fullpath), exist_ok=True)
-
-    # Add EDITER parameters to XML header.
-    new_hdr = copy.deepcopy(hdr)
-    new_hdr.userParameters.userParameterLong.append(ismrmrd.xsd.userParameterLongType('EDITER_kx', editer_params['dk'][0]))
-    new_hdr.userParameters.userParameterLong.append(ismrmrd.xsd.userParameterLongType('EDITER_ky', editer_params['dk'][1]))
-    new_hdr.userParameters.userParameterLong.append(ismrmrd.xsd.userParameterLongType('EDITER_maxNoLines', editer_params['max_lines_per_group']))
-    new_hdr.userParameters.userParameterString.append(ismrmrd.xsd.userParameterStringType('processing', 'EDITER'))
-    new_hdr.userParameters.userParameterString.append(ismrmrd.xsd.userParameterStringType('EDITER_groupingAlgo', editer_params['grouping_method']))
-    new_hdr.acquisitionSystemInformation.coilLabel = [hdr.acquisitionSystemInformation.coilLabel[ch_i] for ch_i in mri_coils]
-    new_hdr.acquisitionSystemInformation.receiverChannels = len(new_hdr.acquisitionSystemInformation.coilLabel)
-
-    # Copy and fix acquisition objects
-    new_acq_list = []
-
-    for acq_i, acq_ in enumerate(acq_list):
-        new_head = copy.deepcopy(acq_.getHead())
-        new_head.active_channels = len(new_hdr.acquisitionSystemInformation.coilLabel)
-        new_head.available_channels = len(new_hdr.acquisitionSystemInformation.coilLabel)
-        if remove_os:
-            new_head.number_of_samples = ksp_emicorr.shape[0]
-            new_head.center_sample = pre_discard//2
-
-        new_acq_list.append(ismrmrd.Acquisition(head=new_head, data=np.ascontiguousarray(ksp_emicorr[:,acq_i,:].squeeze().T.astype(np.complex64))))
-
-    with ismrmrd.Dataset(output_data_fullpath, create_if_needed=True) as new_dset:
-        for acq_ in new_acq_list:
-            new_dset.append_acquisition(acq_)
-
-        for wave_ in wf_list:
-            new_dset.append_waveform(wave_)
-
-        new_dset.write_xml_header(ismrmrd.xsd.ToXML(new_hdr))
+    user_params = {'processing': 'EDITER',
+                   'EDITER_kx': editer_params['dk'][0],
+                   'EDITER_ky': editer_params['dk'][1],
+                   'EDITER_maxNoLines': editer_params['max_lines_per_group'],
+                   'EDITER_groupingAlgo': editer_params['grouping_method']
+                    }
+    mrdhelper.save_processed_raw_data(output_data_fullpath, hdr, acq_list, wf_list, ksp_emicorr, mri_coils, user_params=user_params)
     
     return output_data_fullpath
 

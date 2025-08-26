@@ -7,6 +7,7 @@ from numpy.fft import ifft, ifftshift, fft, fftshift, fftn, ifftn
 import numpy as np
 import numpy.typing as npt
 from scipy.signal.windows import tukey
+import pyfftw
 
 def cifft(data, axis):
     '''Centered IFFT.'''
@@ -61,6 +62,57 @@ def qint(ym1, y0, yp1):
     y = y0 - 0.25 * (ym1 - yp1) * p
     a = 0.5 * (ym1 - 2 * y0 + yp1)
     return p, y, a
+
+def find_freq_qifft(data, df, f_center, f_radius, os, ave_dim):
+    Nsamp = data.shape[0]
+    dfint = df / os
+    data = pyfftw.byte_align(data.transpose(2,1,0))
+
+    # start_time = time.time()
+    fft = pyfftw.builders.ifft(data, n=Nsamp*os, axis=2, threads=64, planner_effort='FFTW_ESTIMATE')
+    data_f = np.fft.ifftshift(fft(), axes=2)
+    data_f = data_f.transpose((2, 1 ,0))
+    # end_time = time.time()
+    # print(end_time-start_time)
+    # data_f = np.fft.ifftshift(pyfftw.interfaces.numpy_fft.ifft(data, Nsamp*os, axis=0), axes=0)
+    # data_f = np.fft.ifftshift(np.fft.ifft(data, Nsamp * os, axis=0), axes=0)
+    data_f = np.abs(data_f)
+
+    if ave_dim is not None:
+        data_fpk = np.mean(data_f, axis=ave_dim)
+
+    f_axis = np.arange(-Nsamp * os / 2, Nsamp * os / 2) * dfint
+
+    f_search_interval = (f_axis < (f_center + f_radius / 2)) & (f_axis > (f_center - f_radius / 2))
+
+    if np.sum(f_search_interval) == 0:
+        raise ValueError('Search frequency is outside of the imaging bandwidth. Check PT frequency.')
+
+    data_fpk_srch = data_fpk[f_search_interval]
+    f_axis_fpk_srch = f_axis[f_search_interval]
+
+    Iinit = np.argmax(data_fpk_srch, axis=0)
+
+    if np.any((Iinit == 0) | (Iinit == len(data_fpk_srch) - 1)):
+        print(f'Peak is found at the edge index of {Iinit}.\nThis may mean the peak is outside of the given frequency range or there is no peak at all. Returning 0.')
+        return 0
+
+    finit = f_axis_fpk_srch[Iinit]
+    if data_fpk_srch.ndim > 1: 
+        Ipr = np.ravel_multi_index((Iinit-1, np.arange(data_fpk_srch.shape[1])), data_fpk_srch.shape)
+        Icr = np.ravel_multi_index((Iinit, np.arange(data_fpk_srch.shape[1])), data_fpk_srch.shape)
+        Inx = np.ravel_multi_index((Iinit+1, np.arange(data_fpk_srch.shape[1])), data_fpk_srch.shape)
+    else:
+        Ipr = Iinit-1
+        Icr = Iinit
+        Inx = Iinit+1
+
+    p, _, _ = qint(data_fpk_srch.ravel()[Ipr], data_fpk_srch.ravel()[Icr], data_fpk_srch.ravel()[Inx])
+
+    f_found = finit + p * dfint
+    fcorrmin = f_center - f_found
+
+    return fcorrmin
 
 def designlp_tukeyfilt_freq(Fstop: float, Fs: float, Ns: int):
     '''Design frequency coefficients for a low-pass filter using Tukey window in frequency domain.
@@ -197,3 +249,4 @@ def angle_dependant_filtering(sig: npt.NDArray[np.float64], n_unique_angles: int
     # plt.figure()
     # plt.plot(p(angles[I])[Irev], '*')
     return sig_filtered
+

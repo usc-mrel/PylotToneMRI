@@ -1,23 +1,25 @@
 # %%
 import argparse
-import ismrmrd
-import rtoml
-import os
-from scipy.io import loadmat
-from scipy.signal.windows import tukey
-from scipy.signal import savgol_filter
-import numpy as np
-from numpy.fft import ifftshift
-from typing import Union
-import pylottone.mrdhelper as mrdhelper
 import ctypes
-from pylottone.constants import PILOTTONE_WAVEFORM_ID
-import pylottone as pt
-from pylottone.pt import extract_triggers
-import matplotlib.pyplot as plt
+import os
+from typing import Union
 
-from pilottone_ecg_jitter import pt_ecg_jitter
+import ismrmrd
+import matplotlib.pyplot as plt
+import numpy as np
+import rtoml
+from numpy.fft import ifftshift
+from scipy.io import loadmat
+from scipy.signal import savgol_filter
+from scipy.signal.windows import tukey
+
+import pylottone as pt
+import pylottone.mrdhelper as mrdhelper
+from pylottone.constants import PILOTTONE_WAVEFORM_ID
 from pylottone.selectionui import get_multiple_filepaths
+from pylottone.trajectory import remove_readout_os, calc_fovshift_phase
+from pylottone.triggering import pt_ecg_jitter, extract_triggers
+from pylottone.signal import find_freq_qifft
 
 # %%
 # Read the data in
@@ -25,35 +27,15 @@ from pylottone.selectionui import get_multiple_filepaths
 def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
     f_pt = cfg['pilottone']['pt_freq']
     remove_os = cfg['saving']['remove_os']
-    # DATA_ROOT = cfg['DATA_ROOT']
-    # DATA_DIR = cfg['data_folder']
+
     data_dir = os.path.join('/', *(os.path.dirname(ismrmrd_data_fullpath).split('/')[:-2]))
     print(f"Data dir: {data_dir}")
 
     raw_file = ismrmrd_data_fullpath.split('/')[-1]
     ismrmrd_data_fullpath, ismrmrd_noise_fullpath = mrdhelper.siemens_mrd_finder(data_dir, '', raw_file)
 
-    print(f'Reading {ismrmrd_data_fullpath}...')
-    with ismrmrd.Dataset(ismrmrd_data_fullpath) as dset:
-        n_acq = dset.number_of_acquisitions()
-        print(f'There are {n_acq} acquisitions in the file. Reading...')
-
-        acq_list = []
-        for ii in range(n_acq):
-            acq_list.append(dset.read_acquisition(ii))
-
-        try:
-            n_wf = dset.number_of_waveforms()
-            print(f'There are {n_wf} waveforms in the dataset. Reading...')
-        except LookupError:
-            n_wf = 0
-
-        wf_list = []
-
-        for ii in range(n_wf):
-            wf_list.append(dset.read_waveform(ii))
-        
-        hdr = ismrmrd.xsd.CreateFromDocument(dset.read_xml_header())
+    acq_list, wf_list, hdr = mrdhelper.read_mrd(ismrmrd_data_fullpath)
+    n_acq = len(acq_list)
 
     # get the k-space trajectory based on the metadata hash.
     traj_name = hdr.userParameters.userParameterString[1].value
@@ -66,25 +48,9 @@ def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
     kx = traj['kx'][:,:]
     ky = traj['ky'][:,:]
     dt = float(traj['param']['dt'])
-    msize = int(10 * traj['param']['fov'] / traj['param']['spatial_resolution'])
     pre_discard = int(traj['param']['pre_discard'])
 
-    # Convert raw data and trajectory into convenient arrays
-    ktraj = np.stack((kx, -ky), axis=2)
-    # find max ktraj value
-    kmax = np.max(np.abs(kx + 1j * ky))
-    # swap 0 and 1 axes to make repetitions the first axis (repetitions, interleaves, 2)
-    ktraj = np.swapaxes(ktraj, 0, 1)
-    ktraj = 0.5 * (ktraj / kmax) * msize
-
-    data = [arm.data[:,:] for arm in acq_list]
-    coord = [ktraj[ii%n_unique_angles,:,:] for ii in range(n_acq)]
-
-    data = np.array(data)
-    data = np.transpose(data, axes=(2, 0, 1))
-    coord = np.array(coord, dtype=np.float32)
-    coord = np.transpose(coord, axes=(2, 1, 0))
-
+    data = np.array([arm.data[:,:] for arm in acq_list]).transpose((2, 0, 1))
 
     # %%
     n_channels = data.shape[2]
@@ -137,7 +103,7 @@ def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
     # ================================
     # Demodulate any shifts
     # ================================
-    phase_mod_rads = pt.calc_fovshift_phase(
+    phase_mod_rads = calc_fovshift_phase(
         np.vstack((np.zeros((pre_discard, n_unique_angles)), kx)), 
         np.vstack((np.zeros((pre_discard, n_unique_angles)), ky)), 
         acq_list[0])
@@ -153,7 +119,7 @@ def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
     # plt.plot(np.abs(pt.signal.to_hybrid_kspace(ksp_measured_[:,10,0])))
     # plt.show()
 
-    fcorrmin = pt.find_freq_qifft(ksp_measured_[:,:,:], df, f_diff, 3e3, 4, (2))
+    fcorrmin = find_freq_qifft(ksp_measured_[:,:,:], df, f_diff, 3e3, 4, (2))
 
     ksp_window = np.ones(ksp_measured_.shape[0])
     # ksp_window = ksp_window[nc:]
@@ -294,9 +260,8 @@ def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
 
     if cfg['saving']['save_model_subtracted']:
         from pathlib import Path
-        import copy
-        import pyfftw
-        from editer import autopick_sensing_coils
+
+        from pylottone.editer import autopick_sensing_coils
 
         ksp_ptsubbed = ksp_ptsubbed_*np.conj(phase_mod_rads)
 
@@ -319,7 +284,10 @@ def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
         noise = np.transpose(np.asarray(noise_list), (1,0,2)).reshape((noise_list[0].shape[0], -1))[mri_coils,:]
 
         if cfg['pilottone']['prewhiten']:
-            from reconstruction.coils import apply_prewhitening, calculate_prewhitening
+            from pylottone.reconstruction.coils import (
+                apply_prewhitening,
+                calculate_prewhitening,
+            )
 
             print('Prewhitening the raw data...')
             dmtx = calculate_prewhitening(noise)
@@ -334,14 +302,7 @@ def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
         n_samp = ksp_ptsubbed.shape[0]
 
         if remove_os:
-            ksp_ptsubbed = pyfftw.byte_align(ksp_ptsubbed)
-
-            keepOS = np.concatenate([np.arange(n_samp // 4), np.arange(n_samp * 3 // 4, n_samp)])
-            ifft_ = pyfftw.builders.ifft(ksp_ptsubbed, n=n_samp, axis=0, threads=32, planner_effort='FFTW_ESTIMATE')
-            ksp_ptsubbed = ifft_()
-
-            fft_ = pyfftw.builders.fft(ksp_ptsubbed[keepOS, :, :], n=keepOS.shape[0], axis=0, threads=32, planner_effort='FFTW_ESTIMATE')
-            ksp_ptsubbed = fft_()
+            ksp_ptsubbed = remove_readout_os(ksp_ptsubbed)
             n_samp = n_samp // 2
 
 
@@ -350,37 +311,10 @@ def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
         print('Saving to ' + output_data_fullpath)
 
         Path.mkdir(Path(output_dir_fullpath), exist_ok=True)
+        user_params = {'processing': 'ModelSubtraction'}
+        mrdhelper.save_processed_raw_data(output_data_fullpath, hdr, acq_list, wf_list, 
+                                             ksp_ptsubbed, mri_coils, pt_wf if cfg['saving']['save_pt_waveforms'] else None, user_params)
 
-        # Update new parameters to XML header.
-        new_hdr = copy.deepcopy(hdr)
-        new_hdr.userParameters.userParameterString.append(ismrmrd.xsd.userParameterStringType('processing', 'ModelSubtraction'))
-        new_hdr.acquisitionSystemInformation.coilLabel = [hdr.acquisitionSystemInformation.coilLabel[ch_i] for ch_i in mri_coils]
-        new_hdr.acquisitionSystemInformation.receiverChannels = len(new_hdr.acquisitionSystemInformation.coilLabel)
-
-        # Copy and fix acquisition objects
-        new_acq_list = []
-
-        for acq_i, acq_ in enumerate(acq_list):
-            new_head = copy.deepcopy(acq_.getHead())
-            new_head.active_channels = len(new_hdr.acquisitionSystemInformation.coilLabel)
-            new_head.available_channels = len(new_hdr.acquisitionSystemInformation.coilLabel)
-            if remove_os:
-                new_head.number_of_samples = ksp_ptsubbed.shape[0]
-                new_head.center_sample = pre_discard//2
-
-            new_acq_list.append(ismrmrd.Acquisition(head=new_head, data=np.ascontiguousarray(ksp_ptsubbed[:,acq_i,:].squeeze().T.astype(np.complex64))))
-
-        with ismrmrd.Dataset(output_data_fullpath, create_if_needed=True) as new_dset:
-            for acq_ in new_acq_list:
-                new_dset.append_acquisition(acq_)
-
-            for wave_ in wf_list:
-                new_dset.append_waveform(wave_)
-
-            if cfg['saving']['save_pt_waveforms']:
-                new_dset.append_waveform(pt_wf)
-
-            new_dset.write_xml_header(ismrmrd.xsd.ToXML(new_hdr))
         return output_data_fullpath
 
 if __name__ == '__main__':

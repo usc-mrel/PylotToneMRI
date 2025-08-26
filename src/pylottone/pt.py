@@ -1,57 +1,17 @@
-import ismrmrd
-from numpy.fft import ifft, fft
-from scipy.signal.windows import tukey
-from scipy.linalg import lstsq
-from scipy.signal import find_peaks, peak_widths
-from scipy.sparse.linalg import svds
-from .signal import apply_filter_freq, designbp_tukeyfilt_freq, designlp_tukeyfilt_freq, qint
-from .sobi import sobi
+import math
+
+import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
-import pyfftw
-import math
-import matplotlib.pyplot as plt
-import re
+from numpy.fft import fft, ifft
+from scipy.linalg import lstsq
+from scipy.signal import find_peaks, peak_widths, savgol_filter
+from scipy.signal.windows import tukey
+from scipy.sparse.linalg import svds
 
-def calc_fovshift_phase(kx: npt.NDArray, ky: npt.NDArray, acq: ismrmrd.Acquisition) -> npt.NDArray[np.complex64]:
-    '''Calculate the phase demodulation due to the FOV shift in the GCS.
+from .signal import apply_filter_freq, designbp_tukeyfilt_freq, designlp_tukeyfilt_freq
+from .sobi import sobi
 
-    Parameters:
-    ----------
-    kx (np.ndarray): 
-        1D array of k-space points in the logical x coordinates.
-    ky (np.ndarray): 
-        2D array of k-space points in the logical y coordinates.
-    acq (ismrmrd.Acquisition): 
-        Acquisition object containing the phase and read directions, and position.
-
-    Returns:
-    ----------
-    np.ndarray: 
-        1D array of phase demodulation values in the GCS.
-    '''
-
-    gbar = 42.576e6
-
-    gx = np.diff(np.concatenate((np.zeros((1, kx.shape[1]), dtype=kx.dtype), kx)), axis=0)/gbar # [T/m]
-    gy = np.diff(np.concatenate((np.zeros((1, kx.shape[1]), dtype=kx.dtype), ky)), axis=0)/gbar # [T/m]
-    g_nom = np.stack((gx, gy), axis=2)
-    g_gcs = np.concatenate((g_nom, np.zeros((g_nom.shape[0], g_nom.shape[1], 1))), axis=2)
-
-    r_GCS2RCS = np.array(  [[0,    1,   0],  # [PE]   [0 1 0] * [r]
-                            [1,    0,   0],  # [RO] = [1 0 0] * [c]
-                            [0,    0,   1]]) # [SL]   [0 0 1] * [s]
-
-    r_GCS2PCS = np.array([np.array(acq.phase_dir), 
-                        np.array(acq.read_dir), 
-                        np.array(acq.slice_dir)])
-    PCS_offset = np.array([1, 1, 1])*np.array(acq.position)*1e-3
-    GCS_offset = r_GCS2PCS.dot(PCS_offset)
-    # RCS_offset = r_GCS2RCS.dot(GCS_offset)
-    g_rcs = np.dot(r_GCS2RCS, np.transpose(g_gcs, (1,2,0))).transpose((2,1,0))
-    phase_mod_rads = np.exp(-1j*np.cumsum(2*np.pi*gbar*np.sum(g_rcs*GCS_offset, axis=2), axis=0)) # [rad]
-
-    return phase_mod_rads.astype(np.complex64)
 
 def est_dtft(t, data, deltaf, window):
     ''' est_dtft MMSE sine amplitude estimate by DTFT sum given freq deltaf.
@@ -76,57 +36,6 @@ def est_dtft(t, data, deltaf, window):
 
     return (clean, x_fit)
 
-
-def find_freq_qifft(data, df, f_center, f_radius, os, ave_dim):
-    Nsamp = data.shape[0]
-    dfint = df / os
-    data = pyfftw.byte_align(data.transpose(2,1,0))
-
-    # start_time = time.time()
-    fft = pyfftw.builders.ifft(data, n=Nsamp*os, axis=2, threads=64, planner_effort='FFTW_ESTIMATE')
-    data_f = np.fft.ifftshift(fft(), axes=2)
-    data_f = data_f.transpose((2, 1 ,0))
-    # end_time = time.time()
-    # print(end_time-start_time)
-    # data_f = np.fft.ifftshift(pyfftw.interfaces.numpy_fft.ifft(data, Nsamp*os, axis=0), axes=0)
-    # data_f = np.fft.ifftshift(np.fft.ifft(data, Nsamp * os, axis=0), axes=0)
-    data_f = np.abs(data_f)
-
-    if ave_dim is not None:
-        data_fpk = np.mean(data_f, axis=ave_dim)
-
-    f_axis = np.arange(-Nsamp * os / 2, Nsamp * os / 2) * dfint
-
-    f_search_interval = (f_axis < (f_center + f_radius / 2)) & (f_axis > (f_center - f_radius / 2))
-
-    if np.sum(f_search_interval) == 0:
-        raise ValueError('Search frequency is outside of the imaging bandwidth. Check PT frequency.')
-
-    data_fpk_srch = data_fpk[f_search_interval]
-    f_axis_fpk_srch = f_axis[f_search_interval]
-
-    Iinit = np.argmax(data_fpk_srch, axis=0)
-
-    if np.any((Iinit == 0) | (Iinit == len(data_fpk_srch) - 1)):
-        print(f'Peak is found at the edge index of {Iinit}.\nThis may mean the peak is outside of the given frequency range or there is no peak at all. Returning 0.')
-        return 0
-
-    finit = f_axis_fpk_srch[Iinit]
-    if data_fpk_srch.ndim > 1: 
-        Ipr = np.ravel_multi_index((Iinit-1, np.arange(data_fpk_srch.shape[1])), data_fpk_srch.shape)
-        Icr = np.ravel_multi_index((Iinit, np.arange(data_fpk_srch.shape[1])), data_fpk_srch.shape)
-        Inx = np.ravel_multi_index((Iinit+1, np.arange(data_fpk_srch.shape[1])), data_fpk_srch.shape)
-    else:
-        Ipr = Iinit-1
-        Icr = Iinit
-        Inx = Iinit+1
-
-    p, _, _ = qint(data_fpk_srch.ravel()[Ipr], data_fpk_srch.ravel()[Icr], data_fpk_srch.ravel()[Inx])
-
-    f_found = finit + p * dfint
-    fcorrmin = f_center - f_found
-
-    return fcorrmin
 
 def sniffer_sub(b: npt.NDArray, A: npt.NDArray):
     Npe = A.shape[0]
@@ -252,8 +161,6 @@ def extract_pilottone_navs(pt_sig, f_samp: float, params: dict):
     # ================================================================
     # Denoising step
     # ================================================================ 
-
-    from scipy.signal import savgol_filter
     
     pt_denoised = savgol_filter(pt_sig, params['golay_filter_len'], 3, axis=0)
     pt_denoised = pt_denoised - np.mean(pt_denoised, axis=0)
@@ -527,127 +434,3 @@ def apply_pt_calib(pt_sig, Vresp, accept_list_resp, Vcard, accept_list_cardiac, 
 
 
     return pt_respiratory, pt_cardiac
-
-def get_volt_from_protoname(proto_name: str) -> float:
-    """
-    Extract the PT volt if written in the protocol name as _XXXV_ or _XXXmV_.
-    
-    Parameters:
-    proto_name (str): Protocol name containing the voltage information.
-    
-    Returns:
-    pt_volt (float): Extracted voltage in volts (V). Returns NaN if no voltage information is found.
-    """
-    proto_fields = proto_name.lower().split('_')
-    pt_volt = np.nan
-    
-    for fld in proto_fields:
-        if 'mv' in fld:
-            vval = re.findall(r'\d+\.?\d*', fld)
-            if not vval:
-                continue
-            pt_volt = float(vval[0]) * 1e-3
-            break
-
-        if 'v' in fld:
-            vval = re.findall(r'\d+\.?\d*', fld)
-            if not vval:
-                continue
-            pt_volt = float(vval[0])
-            break
-
-    if np.isnan(pt_volt):
-        print('Could not extract PT voltage from the protocol name.')
-
-    return pt_volt
-
-def beat_rejection(pktimes, padloc, pkamps=None):
-    '''Rejects the "bad beats", that are 3*std away from the mean
-    heart rate, and optionally peaks that have amplitude at least 3*std away 
-    from the mean amplitude.
-    '''
-    hr_perpeak = 60./np.diff(pktimes)
-    hr_variation = np.std(hr_perpeak)
-    hr_mean = np.mean(hr_perpeak)
-    hr_diffs = hr_perpeak - hr_mean
-    if padloc == "pre":
-        hr_accept_list = np.hstack((1, abs(hr_diffs)<(3*hr_variation)))
-    elif padloc == "post":
-        hr_accept_list = np.hstack((abs(hr_diffs)<(3*hr_variation), 1))
-    
-    if pkamps is not None:
-        mean_ptpk = np.mean(pkamps(hr_accept_list))
-        ptpk_variation = np.std(pkamps(hr_accept_list))
-        hr_accept_list = hr_accept_list & (np.abs(pkamps-mean_ptpk) < 3*ptpk_variation)
-    
-    return hr_accept_list
-
-
-def prepeak_matching(time_pt, pt_cardiac_peak_locs, time_ecg, ecg_peak_locs):
-    # Somewhat working immediately preceding peak matching algo.
-
-    t_first_ecg_pk = time_ecg[ecg_peak_locs[0]]
-    idx_first_pt_after_ecg = np.nonzero(time_pt[pt_cardiac_peak_locs] > t_first_ecg_pk)[0][0]
-    pt_peaks_selected = pt_cardiac_peak_locs[idx_first_pt_after_ecg:]
-    ecg_peaks_selected = ecg_peak_locs[:len(pt_peaks_selected)]
-
-    # # Reject bad beats
-    # ptPeaksSelected = ptPeaksSelected(hrAcceptList(idx_first_pt_after_ecg:end))
-    # ecgPeaksSelected = ecgPeaksSelected(hrAcceptList(idx_first_pt_after_ecg:end))
-
-    peak_diff = time_pt[pt_peaks_selected] - time_ecg[ecg_peaks_selected]
-    return peak_diff, pt_peaks_selected
-
-def interval_peak_matching(time_pt, pt_cardiac_peak_locs, time_ecg, ecg_peak_locs):
-
-    # Iterate over ECG peaks, and check if there is a PT peak between current and next ECG peak.
-    pt_trig_wf = np.zeros(time_pt.shape, dtype=int)
-    pt_trig_wf[pt_cardiac_peak_locs] = 1
-    peak_diff = []
-    extra_pk_idx = []
-    miss_pk_idx = []
-
-    n_ecg_pk = ecg_peak_locs.shape[0]
-    for pk_i in range(n_ecg_pk-1):
-        curr_pk_t = time_ecg[ecg_peak_locs[pk_i]]
-        next_pk_t = time_ecg[ecg_peak_locs[pk_i+1]]
-
-        masked_pt_trig = pt_trig_wf & ((time_pt > curr_pk_t) & (time_pt < next_pk_t))
-
-        n_trig_per_trig = np.sum(masked_pt_trig)
-        if n_trig_per_trig == 0:
-            # Missed beat, nothing to do, move on.
-            miss_pk_idx.append(pk_i)
-            continue
-        elif n_trig_per_trig > 1:
-            # Extraneous trigger, not cool. Mark, but still accept the first one.
-            extra_pk_idx.append(pk_i)
-        
-        pt_peak_idx = np.nonzero(masked_pt_trig)[0][0]
-        peak_diff.append(time_pt[pt_peak_idx] - curr_pk_t)
-
-    return np.asarray(peak_diff), np.asarray(miss_pk_idx), np.asarray(extra_pk_idx)
-
-def extract_triggers(time_pt, cardiac_waveform, skip_time=0.6, prominence=0.4, max_hr=120):
-    ''' Extract triggers from the cardiac waveform.
-        Parameters:
-            time_pt: np.array
-                Time points for the cardiac waveform.
-            cardiac_waveform: np.array
-                Cardiac waveform.
-            skip_time: float
-                Time to skip at the beginning of the waveform.
-        Returns:
-            pt_cardiac_trigs: np.array
-                Trigger waveform.
-    '''
-    dt_pt = (time_pt[1] - time_pt[0])
-    Dmin = int(np.ceil((60/max_hr)/(dt_pt))) # Min distance between two peaks, should not be less than 0.6 secs (100 bpm max assumed)
-    pt_cardiac_peak_locs,_ = find_peaks(cardiac_waveform[time_pt > skip_time], prominence=prominence, distance=Dmin)
-    pt_cardiac_peak_locs += np.sum(time_pt <= skip_time)
-    pt_peaks_selected = pt_cardiac_peak_locs
-    n_acq = time_pt.shape[0]
-    pt_cardiac_trigs = np.zeros((n_acq,), dtype=np.uint32)
-    pt_cardiac_trigs[pt_peaks_selected] = 1
-
-    return pt_cardiac_trigs
