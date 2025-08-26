@@ -1,6 +1,9 @@
 # Project specific
 output_recons/
 config.toml
+saved_figures/
+figures/
+configs/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -170,8 +173,3 @@ cython_debug/
 
 # vscode
 .vscode/
-
-# Project specific
-saved_figures/
-figures/
-configs/

@@ -7,7 +7,7 @@ import scipy.io as sio
 from scipy.signal import savgol_filter
 import h5py
 import ismrmrd
-from ui.selectionui import get_filepath, get_selection
+from pylottone.selectionui import get_filepath, get_selection
 
 def centered_crop(img, crop_to):
     '''Crops the image to the desired size, centered.'''

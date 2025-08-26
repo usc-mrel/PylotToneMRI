@@ -3,10 +3,10 @@ import os
 import rtoml
 import numpy as np
 
-from pilottone import beat_rejection, interval_peak_matching, get_volt_from_protoname
-import mrdhelper
+from pylottone import beat_rejection, interval_peak_matching, get_volt_from_protoname
+import pylottone.mrdhelper as mrdhelper
 from scipy.signal import find_peaks
-from ui.selectionui import get_multiple_filepaths
+from pylottone.selectionui import get_multiple_filepaths
 
 def pt_ecg_jitter(time_pt, pt_cardiac, pt_cardiac_derivative, time_ecg, ecg_waveform, pt_cardiac_trigs=None, pt_derivative_trigs=None, ecg_trigs=None, skip_time=0.6, max_hr=120, show_outputs=True): 
     """ 

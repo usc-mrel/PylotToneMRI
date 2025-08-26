@@ -1,7 +1,7 @@
 import ismrmrd
 import h5py
 import numpy as np
-from ui.selectionui import get_selection
+from pylottone.selectionui import get_selection
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 

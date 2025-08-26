@@ -6,11 +6,11 @@ from scipy.io import loadmat
 from scipy.signal.windows import tukey
 import numpy as np
 import matplotlib.pyplot as plt
-import mrdhelper
+import pylottone.mrdhelper as mrdhelper
 from pathlib import Path
 import copy
 import pyfftw
-from editer import autopick_sensing_coils
+from pylottone.editer import autopick_sensing_coils
 
 
 # Read config

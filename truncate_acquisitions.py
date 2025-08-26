@@ -8,7 +8,7 @@ import h5py
 import numpy as np
 import subprocess
 import argparse
-from ui.selectionui import get_filepath
+from pylottone.selectionui import get_filepath
 from PySide6.QtCore import QDir
 import ismrmrd
 

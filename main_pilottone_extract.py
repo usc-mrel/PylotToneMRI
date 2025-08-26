@@ -9,15 +9,15 @@ from scipy.signal import savgol_filter
 import numpy as np
 from numpy.fft import ifftshift
 from typing import Union
-import mrdhelper
+import pylottone.mrdhelper as mrdhelper
 import ctypes
-from constants import PILOTTONE_WAVEFORM_ID
-import pilottone as pt
-from pilottone.pt import extract_triggers
+from pylottone.constants import PILOTTONE_WAVEFORM_ID
+import pylottone as pt
+from pylottone.pt import extract_triggers
 import matplotlib.pyplot as plt
 
 from pilottone_ecg_jitter import pt_ecg_jitter
-from ui.selectionui import get_multiple_filepaths
+from pylottone.selectionui import get_multiple_filepaths
 
 # %%
 # Read the data in

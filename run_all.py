@@ -9,7 +9,7 @@ import rtoml
 import main_pilottone_extract
 import main_editer_correct
 import send_to_recon_server
-from ui.selectionui import get_multiple_filepaths
+from pylottone.selectionui import get_multiple_filepaths
 
 
 # Check if filepaths are provided as arguments

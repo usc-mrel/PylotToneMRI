@@ -8,13 +8,13 @@ import numpy as np
 import pyfftw
 from pathlib import Path
 import copy
-from editer import autopick_sensing_coils, apply_editer
+from pylottone.editer import autopick_sensing_coils, apply_editer
 from scipy.signal.windows import tukey
 from scipy.sparse.linalg import svds
 import time
 import multiprocessing as mp
-import mrdhelper
-from ui.selectionui import get_multiple_filepaths
+import pylottone.mrdhelper as mrdhelper
+from pylottone.selectionui import get_multiple_filepaths
 
 def process_channel(ch):
     est_emi_ch, _ = apply_editer(ksp_measured[:, :, ch], ksp_sniffer2, editer_params, w)
@@ -106,7 +106,7 @@ def main(ismrmrd_data_fullpath, cfg) -> str:
     noise = np.transpose(np.asarray(noise_list), (1,0,2)).reshape((noise_list[0].shape[0], -1))
 
     if prewhiten:
-        from reconstruction.coils import apply_prewhitening, calculate_prewhitening
+        from pylottone.reconstruction.coils import apply_prewhitening, calculate_prewhitening
 
         print('Prewhitening the raw data...')
         dmtx = calculate_prewhitening(noise)

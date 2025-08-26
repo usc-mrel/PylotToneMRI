@@ -7,11 +7,11 @@ import os
 from pathlib import Path
 from types import SimpleNamespace
 
-from ui.selectionui import get_multiple_filepaths
+from pylottone.selectionui import get_multiple_filepaths
 
 import rtoml
 
-from reconstruction import client
+from pylottone.reconstruction import client
 
 def main(ismrmrd_data_fullpath, cfg):
     DATA_DIR    = cfg['data_folder']
