@@ -7,7 +7,7 @@ import h5py
 import numpy as np
 import subprocess
 import argparse
-from ui.selectionui import get_filepath
+from pylottone.selectionui import get_filepath
 from PySide6.QtCore import QDir
 
 parser = argparse.ArgumentParser(description='Remove waveform by its ID from an ISMRMRD dataset. Especially useful when we want to replace custom waveforms.')

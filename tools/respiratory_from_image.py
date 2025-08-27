@@ -5,10 +5,10 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 import numpy as np
 import numpy.typing as npt
-from pilottone import qint
+from pylottone import qint
 from scipy.signal import find_peaks, savgol_filter
 from scipy.ndimage import median_filter
-from ui.selectionui import get_selection, get_filepath
+from pylottone.selectionui import get_selection, get_filepath
 import hyperspy.api as hs
 
 def extract_nav_from_profile(line_profile, ):

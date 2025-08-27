@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<CoilArray>
+   <BIOTSAVARTLOOP Azimuth="45" Dim="3" Extent="500" Name="B11" Points="64" Polar="90" Radius="80"
+                   XPos="144"
+                   YPos="130"
+                   ZPos="0"/>
+   <BIOTSAVARTLOOP Azimuth="90" Dim="3" Extent="500" Name="B12" Points="64" Polar="90" Radius="80"
+                   XPos="0"
+                   YPos="200"
+                   ZPos="0"/>
+   <BIOTSAVARTLOOP Azimuth="135" Dim="3" Extent="500" Name="B13" Points="64" Polar="90"
+                   Radius="80"
+                   XPos="-144"
+                   YPos="130"
+                   ZPos="0"/>
+   <BIOTSAVARTLOOP Azimuth="45" Dim="3" Extent="500" Name="B21" Points="64" Polar="90" Radius="80"
+                   XPos="144"
+                   YPos="130"
+                   ZPos="-144"/>
+   <BIOTSAVARTLOOP Azimuth="90" Dim="3" Extent="500" Name="B22" Points="64" Polar="90" Radius="80"
+                   XPos="0"
+                   YPos="200"
+                   ZPos="-144"/>
+   <BIOTSAVARTLOOP Azimuth="135" Dim="3" Extent="500" Name="B23" Points="64" Polar="90"
+                   Radius="80"
+                   XPos="-144"
+                   YPos="130"
+                   ZPos="-144"/>
+   <BIOTSAVARTLOOP Azimuth="270" Dim="3" Extent="500" Name="S1T" Points="64" Polar="90"
+                   Radius="38"
+                   XPos="-57"
+                   YPos="-130"
+                   ZPos="0"/>
+   <BIOTSAVARTLOOP Azimuth="270" Dim="3" Extent="500" Name="S1S" Points="64" Polar="90"
+                   Radius="38"
+                   XPos="0"
+                   YPos="-130"
+                   ZPos="0"/>
+   <BIOTSAVARTLOOP Azimuth="270" Dim="3" Extent="500" Name="S1P" Points="64" Polar="90"
+                   Radius="38"
+                   XPos="57"
+                   YPos="-130"
+                   ZPos="0"/>
+   <BIOTSAVARTLOOP Azimuth="270" Dim="3" Extent="500" Name="S2T" Points="64" Polar="90"
+                   Radius="38"
+                   XPos="-57"
+                   YPos="-130"
+                   ZPos="-57"/>
+   <BIOTSAVARTLOOP Azimuth="270" Dim="3" Extent="500" Name="S2S" Points="64" Polar="90"
+                   Radius="38"
+                   XPos="0"
+                   YPos="-130"
+                   ZPos="-57"/>
+   <BIOTSAVARTLOOP Azimuth="270" Dim="3" Extent="500" Name="S2P" Points="64" Polar="90"
+                   Radius="38"
+                   XPos="57"
+                   YPos="-130"
+                   ZPos="-57"/>
+   <BIOTSAVARTLOOP Azimuth="270" Dim="3" Extent="500" Name="S3T" Points="64" Polar="90"
+                   Radius="38"
+                   XPos="-57"
+                   YPos="-130"
+                   ZPos="-114"/>
+   <BIOTSAVARTLOOP Azimuth="270" Dim="3" Extent="500" Name="S3S" Points="64" Polar="90"
+                   Radius="38"
+                   XPos="0"
+                   YPos="-130"
+                   ZPos="-114"/>
+   <BIOTSAVARTLOOP Azimuth="270" Dim="3" Extent="500" Name="S3P" Points="64" Polar="90"
+                   Radius="38"
+                   XPos="57"
+                   YPos="-130"
+                   ZPos="-114"/>
+   <BIOTSAVARTLOOP Azimuth="270" Dim="3" Extent="500" Name="S4T" Points="64" Polar="90"
+                   Radius="38"
+                   XPos="-57"
+                   YPos="-130"
+                   ZPos="-228"/>
+   <BIOTSAVARTLOOP Azimuth="270" Dim="3" Extent="500" Name="S4S" Points="64" Polar="90"
+                   Radius="38"
+                   XPos="0"
+                   YPos="-130"
+                   ZPos="-228"/>
+   <BIOTSAVARTLOOP Azimuth="270" Dim="3" Extent="500" Name="S4P" Points="64" Polar="90"
+                   Radius="38"
+                   XPos="57"
+                   YPos="-130"
+                   ZPos="-228"/>
+</CoilArray>

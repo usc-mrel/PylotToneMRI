@@ -3,24 +3,33 @@ PylotToneMRI is a Python Toolbox with an emphasis on high-amplitude pilot tone a
 
 # Installation
 
-## Method 1: Using Conda
-Create a conda/mamba environment using `environment.yml`:
-
-```bash
-conda env create -f environment.yml
-```
-Run the scripts as described in [Usage](#usage). For notebooks `ipympl` and `ipykernel` packages can be installed.
-
-## Method 2: Using virtualenv
-Create a virtualenv and install the packages in `requirements.txt`:
+Create an isolated environment using your favorite software (`uv`, `venv`, `conda`, etc.). Example for `venv`:
 
 ```bash
 python -m venv ${venv_name}
 source ${venv_name}/bin/activate
-pip install -r requirements.txt
 ```
 
-**Note:** This method results in lighter environment, but the Python version may not be compatible with the codebease. Toolbox is only tested for Python>=3.10 and Python<=3.12.
+### For development:
+Clone this repository and navigate into it:
+```bash
+git clone https://github.com/usc-mrel/PylotToneMRI.git
+cd PylotToneMRI
+```
+
+Install via `pip` in dev mode:
+
+```bash
+pip install -e .
+```
+## For usage as a library:
+
+It can be directly installed from GitHub via `pip`:
+```bash
+pip install git+https://github.com/usc-mrel/PylotToneMRI
+```
+
+**Note:** Toolbox is only tested for Python>=3.10 and Python<=3.12.
 
 # Usage
 
@@ -32,25 +41,29 @@ Example for supplying the config file: `python script_to_run.py -c config_file_p
 
 Most scripts also accepts list of inputs to be processed as a list of filepaths using `-f` or `--filepaths` switch. If no filepath is provided, scripts will open a UI to select one or multiple files for processing.
  
-Following are the important notebooks/scripts for the typical usage:
+## Summary of important notebooks/scripts
 
-`main_pilottone_extract.py`: This is the main script that loads the raw data, extracts pilot tone, and saves the extracted waveforms back into the same raw data as an MRD waveform. Later parts of this notebook assumes ECG is acquired in the raw data, so if it is not the case, one can also run the parts that extract pilot tone, without comparing to ECG. **Note:** This script assumes the acquisition is from Pulseq, and loads the data as such.
+### Following are under `examples/` directory:
+
+`main_pilottone_extract.py`: This is the main script that loads the raw data, extracts pilot tone, and saves the extracted waveforms back into the same raw data as an MRD waveform. Later parts of this notebook assumes ECG is acquired in the raw data, so if it is not the case, one can also run the parts that extract pilot tone, without comparing to ECG. **Note:** This script provides a pipeline for a spiral acquisiton, as implemented here: [Real Time Spiral sequences in PyPulseq](https://github.com/usc-mrel/rtspiral_pypulseq). Can be used as a template for other type of acquisitions.
 
 `main_editer_correct.py`: This script will process the raw data using EDITER and saves the corrected raw data. 
-
-`send_to_recon_server.py`: This script configures and runs the MRD client, which in turn sends the waveforms and the raw data to the reconstruction server. A server toolkit that includes some reconstructions, including several ones capable of processing pilot tone is provided [here](https://github.com/usc-mrel/python-ismrmrd-server).
 
 `run_all.py`: A convenience script that applies pilot tone extraction and EDITER processing on the supplied raw data, and send the results to reconstruction server.
 
 `main_process_reference.py`: Can be used to process raw data with no PT.
 
-`pilottone_ecg_jitter.py`: This script loads waveforms in a raw data, and compares ECG and pilot tone quality using jitter metric.
+### Following are under `tools/` directory:
 
 `respiratory_from_image.py`: From reconstructed images in MRD format, asks the user to place a line plot, which is then used for estimating respiratory waveform from the reconstructed images.
 
 `remove_waveform.py`: Removes the waveforms with given ID from an MRD raw data. Can also repack the data to reclaim space.
 
 `truncate_acquisitions.py`: Truncates the raw data to shorten the acquisiton time.
+
+-----
+
+`send_to_recon_server.py`: This script is part of the package and also provides an entry point that can be called as `send_to_recon_server`. It configures and runs the MRD client, which in turn sends the waveforms and the raw data to the reconstruction server. A server toolkit that includes some reconstructions, including several ones capable of processing pilot tone is provided [here](https://github.com/usc-mrel/python-ismrmrd-server).
 
 There are several notebooks under `notebooks/` directory for mostly debugging or interactive usage purposes.
 

@@ -9,52 +9,89 @@ from scipy.signal import savgol_filter
 import numpy as np
 from numpy.fft import ifftshift
 from typing import Union
-import mrdhelper
+import pylottone.mrdhelper as mrdhelper
 import ctypes
-from constants import PILOTTONE_WAVEFORM_ID
-import pilottone as pt
-from pilottone.pt import extract_triggers
+from pylottone.constants import PILOTTONE_WAVEFORM_ID
+import pylottone as pt
+from pylottone.pt import extract_triggers
 import matplotlib.pyplot as plt
 
-from pilottone_ecg_jitter import pt_ecg_jitter
-from ui.selectionui import get_multiple_filepaths
+from pylottone.triggering import pt_ecg_jitter
+from pylottone.selectionui import get_multiple_filepaths
+
+
+def extract_raw_pt(ksp_measured, f_diff, df, kx, ky, acq_list, n_unique_angles, pre_discard, dt):
+    
+    n_acq = ksp_measured.shape[1]
+    # ================================
+    # Demodulate any shifts
+    # ================================
+    phase_mod_rads = pt.calc_fovshift_phase(
+        np.vstack((np.zeros((pre_discard, n_unique_angles)), kx)), 
+        np.vstack((np.zeros((pre_discard, n_unique_angles)), ky)), 
+        acq_list[0])
+    phase_mod_rads = [phase_mod_rads[:,ii%n_unique_angles] for ii in range(n_acq)]
+    phase_mod_rads = np.array(phase_mod_rads)[:, :].transpose()[:,:,None]
+
+    # Apply the negative of the phase
+    ksp_measured_ = ksp_measured*phase_mod_rads
+
+    # plt.figure()
+    # plt.plot(np.abs(pt.signal.to_hybrid_kspace(ksp_measured[:,10,0])))
+    # plt.plot(np.abs(pt.signal.to_hybrid_kspace(ksp_measured_[:,10,0])))
+    # plt.show()
+
+    fcorrmin = pt.find_freq_qifft(ksp_measured_[:,:,:], df, f_diff, 3e3, 4, (2))
+
+    ksp_window = np.ones(ksp_measured_.shape[0])
+    # ksp_window = ksp_window[nc:]
+    ksp_measured_ = ksp_measured_*ksp_window[:,None,None]
+
+    time_acq = np.arange(0, ksp_measured_.shape[0])*dt
+
+    ksp_ptsubbed_, pt_sig_fit = pt.est_dtft(time_acq, ksp_measured_, np.array([f_diff])-fcorrmin, ksp_window)
+
+    pt_sig_fit = np.abs(pt_sig_fit)
+    pt_sig = np.squeeze(pt_sig_fit - np.mean(pt_sig_fit, axis=1, keepdims=True))
+
+    # Filter a bandwidth around the pilot tone frequency.
+    fbw = 100e3
+    freq_axis = ifftshift(np.fft.fftfreq(ksp_ptsubbed_.shape[0], dt))
+
+    ksp_win = tukey(2*ksp_ptsubbed_.shape[0], alpha=0.1)
+    ksp_win = ksp_win[(ksp_ptsubbed_.shape[0]):,None,None]
+    ksp_ptsubbed_ = ksp_ptsubbed_*ksp_win # kspace filtering to remove spike at the end of the acquisition
+
+    ptmdlflt = np.ones((ksp_ptsubbed_.shape[0]))
+    ptmdlflt[(freq_axis < (f_diff+fbw/2)) & (freq_axis > (f_diff-fbw/2))] = 0
+    ksp_ptsubbed_ = pt.signal.from_hybrid_kspace(ptmdlflt[:,None,None]*pt.signal.to_hybrid_kspace(ksp_ptsubbed_))
+
+    # plt.figure()
+    # plt.plot(freq_axis, np.abs(pt.signal.to_hybrid_kspace(ksp_ptsubbed_[:,10,0])))
+    # plt.xlabel('Frequency [Hz]')
+    # plt.show()
+
+    pt_sig_clean2 = pt.signal.angle_dependant_filtering(pt_sig, n_unique_angles)
+    return pt_sig_clean2, ksp_ptsubbed_
 
 # %%
 # Read the data in
 
 def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
+    # %%
     f_pt = cfg['pilottone']['pt_freq']
     remove_os = cfg['saving']['remove_os']
-    # DATA_ROOT = cfg['DATA_ROOT']
-    # DATA_DIR = cfg['data_folder']
+
     data_dir = os.path.join('/', *(os.path.dirname(ismrmrd_data_fullpath).split('/')[:-2]))
     print(f"Data dir: {data_dir}")
 
     raw_file = ismrmrd_data_fullpath.split('/')[-1]
     ismrmrd_data_fullpath, ismrmrd_noise_fullpath = mrdhelper.siemens_mrd_finder(data_dir, '', raw_file)
 
-    print(f'Reading {ismrmrd_data_fullpath}...')
-    with ismrmrd.Dataset(ismrmrd_data_fullpath) as dset:
-        n_acq = dset.number_of_acquisitions()
-        print(f'There are {n_acq} acquisitions in the file. Reading...')
+    acq_list, wf_list, hdr = mrdhelper.read_mrd(ismrmrd_data_fullpath)
+    n_acq = len(acq_list)
 
-        acq_list = []
-        for ii in range(n_acq):
-            acq_list.append(dset.read_acquisition(ii))
-
-        try:
-            n_wf = dset.number_of_waveforms()
-            print(f'There are {n_wf} waveforms in the dataset. Reading...')
-        except LookupError:
-            n_wf = 0
-
-        wf_list = []
-
-        for ii in range(n_wf):
-            wf_list.append(dset.read_waveform(ii))
-        
-        hdr = ismrmrd.xsd.CreateFromDocument(dset.read_xml_header())
-
+    acq_list_cal, _, _ = mrdhelper.read_mrd('/server/home/btasdelen/MRI_DATA/pilottone/vol1133_20250316/raw/h5/meas_MID00699_FID12627_pulseq2D_fire_spiralga_200mV_24MHz_calNoGrad.h5')
     # get the k-space trajectory based on the metadata hash.
     traj_name = hdr.userParameters.userParameterString[1].value
 
