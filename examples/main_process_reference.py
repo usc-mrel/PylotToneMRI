@@ -6,11 +6,10 @@ from scipy.io import loadmat
 from scipy.signal.windows import tukey
 import numpy as np
 import matplotlib.pyplot as plt
-import mrdhelper
+import pylottone.mrdhelper as mrdhelper
 from pathlib import Path
-import copy
-import pyfftw
-from editer import autopick_sensing_coils
+from pylottone.editer import autopick_sensing_coils
+from pylottone.trajectory import remove_readout_os
 
 
 # Read config
@@ -53,10 +52,7 @@ traj = loadmat(os.path.join(DATA_ROOT, DATA_DIR, traj_name), squeeze_me=True)
 dt = float(traj['param']['dt'])
 pre_discard = int(traj['param']['pre_discard'])
 
-data = [arm.data[:,:] for arm in acq_list]
-
-data = np.array(data)
-data = np.transpose(data, axes=(2, 0, 1))
+data = np.array([arm.data[:,:] for arm in acq_list]).transpose((2, 0, 1))
 
 
 # %%
@@ -102,7 +98,7 @@ for cal_ in cal_list:
 noise = np.transpose(np.asarray(noise_list), (1,0,2)).reshape((noise_list[0].shape[0], -1))[mri_coils,:]
 
 if cfg['pilottone']['prewhiten']:
-    from reconstruction.coils import apply_prewhitening, calculate_prewhitening
+    from pylottone.reconstruction.coils import apply_prewhitening, calculate_prewhitening
 
     print('Prewhitening the raw data...')
     dmtx = calculate_prewhitening(noise)
@@ -124,14 +120,7 @@ if cfg['pilottone']['discard_badcoils']:
 n_samp = ksp_ptsubbed.shape[0]
 
 if remove_os:
-    ksp_ptsubbed = pyfftw.byte_align(ksp_ptsubbed)
-
-    keepOS = np.concatenate([np.arange(n_samp // 4), np.arange(n_samp * 3 // 4, n_samp)])
-    ifft_ = pyfftw.builders.ifft(ksp_ptsubbed, n=n_samp, axis=0, threads=32, planner_effort='FFTW_ESTIMATE')
-    ksp_ptsubbed = ifft_()
-
-    fft_ = pyfftw.builders.fft(ksp_ptsubbed[keepOS, :, :], n=keepOS.shape[0], axis=0, threads=32, planner_effort='FFTW_ESTIMATE')
-    ksp_ptsubbed = fft_()
+    ksp_ptsubbed = remove_readout_os(ksp_ptsubbed)
     n_samp = n_samp // 2
 
 
@@ -142,30 +131,5 @@ print('Saving to ' + output_data_fullpath)
 Path.mkdir(Path(output_dir_fullpath), exist_ok=True)
 
 # Add EDITER parameters to XML header.
-new_hdr = copy.deepcopy(hdr)
-new_hdr.acquisitionSystemInformation.coilLabel = [hdr.acquisitionSystemInformation.coilLabel[ch_i] for ch_i in mri_coils]
-new_hdr.acquisitionSystemInformation.receiverChannels = len(new_hdr.acquisitionSystemInformation.coilLabel)
-
-# Copy and fix acquisition objects
-new_acq_list = []
-
-for acq_i, acq_ in enumerate(acq_list):
-    new_head = copy.deepcopy(acq_.getHead())
-    new_head.active_channels = len(new_hdr.acquisitionSystemInformation.coilLabel)
-    new_head.available_channels = len(new_hdr.acquisitionSystemInformation.coilLabel)
-    if remove_os:
-        new_head.number_of_samples = ksp_ptsubbed.shape[0]
-        new_head.center_sample = pre_discard//2
-
-    new_acq_list.append(ismrmrd.Acquisition(head=new_head, data=np.ascontiguousarray(ksp_ptsubbed[:,acq_i,:].squeeze().T.astype(np.complex64))))
-
-with ismrmrd.Dataset(output_data_fullpath, create_if_needed=True) as new_dset:
-    for acq_ in new_acq_list:
-        new_dset.append_acquisition(acq_)
-
-    for wave_ in wf_list:
-        new_dset.append_waveform(wave_)
-
-    new_dset.write_xml_header(ismrmrd.xsd.ToXML(new_hdr))
-
+mrdhelper.save_processed_raw_data(output_data_fullpath, hdr, acq_list, wf_list, ksp_ptsubbed, mri_coils)
 

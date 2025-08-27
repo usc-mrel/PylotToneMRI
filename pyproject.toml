@@ -1,0 +1,38 @@
+[project]
+name = "pylottone"
+version = "0.1.0"
+description = "PylotToneMRI is a Python Toolbox with an emphasis on high-amplitude pilot tone applied to spiral MR imaging."
+readme = "README.md"
+authors = [
+    { name = "Bilal Tasdelen", email = "tasdelen@usc.edu" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "cupy-cuda12x>=13.6.0",
+    "ismrmrd>=1.14.1",
+    "matplotlib>=3.10.5",
+    "numpy>=2.3.2",
+    "pyarrview",
+    "pyfftw>=0.15.0",
+    "pyside6>=6.9.1",
+    "rtoml>=0.12.0",
+]
+
+[project.scripts]
+send_to_recon_server = "pylottone.reconstruction.send_to_recon_server:main_cli"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "ipympl>=0.9.7",
+    "jupyterlab>=4.4.6",
+    "mpl-interactions>=0.24.2",
+    "pip>=25.2",
+    "pyarrview",
+]
+
+[tool.uv.sources]
+pyarrview = { git = "https://github.com/btasdelen/pyArrView" }

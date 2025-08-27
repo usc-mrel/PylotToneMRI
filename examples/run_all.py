@@ -5,12 +5,13 @@ It will use the config.toml for the configuration.
 '''
 import argparse
 import os
-import rtoml
-import main_pilottone_extract
-import main_editer_correct
-import send_to_recon_server
-from ui.selectionui import get_multiple_filepaths
 
+import rtoml
+
+import main_editer_correct
+import main_pilottone_extract
+from pylottone.reconstruction import send_to_recon_server
+from pylottone.selectionui import get_multiple_filepaths
 
 # Check if filepaths are provided as arguments
 argparser = argparse.ArgumentParser()
