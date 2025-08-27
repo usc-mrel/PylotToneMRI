@@ -9,17 +9,17 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "cupy-cuda12x>=13.6.0",
-    "hyperspy>=2.3.0",
     "ismrmrd>=1.14.1",
     "matplotlib>=3.10.5",
     "numpy>=2.3.2",
+    "pyarrview",
     "pyfftw>=0.15.0",
     "pyside6>=6.9.1",
     "rtoml>=0.12.0",
 ]
 
 [project.scripts]
-pylottone = "pylottone:main"
+send_to_recon_server = "pylottone.reconstruction.send_to_recon_server:main_cli"
 
 [build-system]
 requires = ["hatchling"]
@@ -31,4 +31,8 @@ dev = [
     "jupyterlab>=4.4.6",
     "mpl-interactions>=0.24.2",
     "pip>=25.2",
+    "pyarrview",
 ]
+
+[tool.uv.sources]
+pyarrview = { git = "https://github.com/btasdelen/pyArrView" }

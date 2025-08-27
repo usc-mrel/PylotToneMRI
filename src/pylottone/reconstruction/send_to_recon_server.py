@@ -58,9 +58,8 @@ def main(ismrmrd_data_fullpath, cfg):
     # %%
     if show_images:
         import h5py
-        import hyperspy.api as hs
+        from pyArrView import av
         import ismrmrd
-        import matplotlib.pyplot as plt
         import numpy as np
 
         # Assuming it is the latest subgroup in the dataset, load it.
@@ -77,36 +76,17 @@ def main(ismrmrd_data_fullpath, cfg):
 
             # Assumes there is only one image series
             imgs = []
-            time_frame = []
             n = dset.number_of_images(imgGroups[0])
             for ii in range(n):
                 frame = dset.read_image(imgGroups[0], ii)
                 imgs.append(np.squeeze(frame.data))
-                time_frame.append(frame.acquisition_time_stamp)
-            img_0 = dset.read_image(imgGroups[0], 0)
 
-        time_frame = np.array(time_frame, dtype=float)*2.5e-3
-        time_frame -= time_frame[0]
-        imgs = np.flip(np.asarray(imgs), axis=2).transpose((0, 2, 1))
-        resolution = img_0.field_of_view[0:2]/np.array(img_0.matrix_size[1:])
-        timestep = time_frame[1] - time_frame[0]
+        imgs = np.flip(np.asarray(imgs), axis=2).transpose((2, 1, 0))
 
-        # Fill the spatial and temporal scales
-        s = hs.signals.Signal2D(imgs)
-        s.axes_manager[0].name = 'Time'
-        s.axes_manager[0].unit = 'ms'
-        s.axes_manager[0].scale = timestep
-        s.axes_manager[1].name = 'x'
-        s.axes_manager[1].unit = 'mm'
-        s.axes_manager[1].scale = resolution[0]
-        s.axes_manager[2].name = 'y'
-        s.axes_manager[2].unit = 'mm'
-        s.axes_manager[2].scale = resolution[1]
-        s.plot(navigator='spectrum', colorbar=False, axes_ticks=False)
-        plt.show()
+        av(imgs)
+        input('Press any keys to end..')
 
-if __name__ == '__main__':
-
+def main_cli():
     # Check if filepaths are provided as arguments
     argparser = argparse.ArgumentParser()
     argparser.add_argument('-f', '--filepaths', nargs='+', help='List of filepaths to process')
@@ -127,3 +107,6 @@ if __name__ == '__main__':
 
     for ismrmrd_data_fullpath in filepaths:
         main(ismrmrd_data_fullpath, cfg)
+
+if __name__ == '__main__':
+    main_cli()

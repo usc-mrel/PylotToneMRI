@@ -364,5 +364,5 @@ if __name__ == '__main__':
     # If a config is specified via the command line arguments, then set ignore_json_config to True
     if ('-c' in sys.argv) or ('--config' in sys.argv):
         args.ignore_json_config = True
-
+    multiprocessing.set_start_method('spawn')
     main(args)
