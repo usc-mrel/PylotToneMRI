@@ -242,7 +242,7 @@ def extract_pilottone_navs(pt_sig, f_samp: float, params: dict):
     pt_denoised = pt_denoised - np.mean(pt_denoised, axis=0)
 
     if params['debug']['show_plots'] is True:
-        plot_multich_comparison(time_pt, pt_sig, pt_denoised, [' ']*n_ch, ['Original', 'SG filtered'])
+        plot_multich_comparison(time_pt, pt_sig, [' ']*n_ch, ['Original', 'SG filtered'])
 
 
     # ================================================================
@@ -259,7 +259,7 @@ def extract_pilottone_navs(pt_sig, f_samp: float, params: dict):
     pt_respiratory_freqs = apply_filter_freq(pt_denoised, filt_bp_resp, 'symmetric')
 
     if params['debug']['show_plots'] is True:
-        plot_multich_comparison(time_pt, pt_denoised, pt_respiratory_freqs, [' ']*n_ch, ['Original', 'respiratory filtered'])
+        plot_multich_comparison(time_pt, pt_respiratory_freqs, [' ']*n_ch, ['Original', 'respiratory filtered'])
 
     
     # ================================================================

@@ -3,10 +3,10 @@ from scipy.optimize import fminbound
 from scipy.signal.windows import blackman
 from scipy.ndimage import zoom
 from scipy import ndimage
-from pilottone.signal import cfftn, cifftn, rssq
+from pylottone.signal import cfftn, cifftn, rssq
 import h5py
 import matplotlib.pyplot as plt
-from ui.vis import ndv
+from pylottone.vis import ndv
 import xml.etree.ElementTree as ET
 
 def circle3d(radius, n_points=100) -> np.ndarray:

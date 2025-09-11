@@ -2,24 +2,28 @@
 import argparse
 import ctypes
 import os
+from pathlib import Path
 from typing import Union
 
 import ismrmrd
 import matplotlib.pyplot as plt
 import numpy as np
 import rtoml
-from numpy.fft import ifftshift
 from scipy.io import loadmat
 from scipy.signal import savgol_filter
-from scipy.signal.windows import tukey
 
 import pylottone as pt
 import pylottone.mrdhelper as mrdhelper
+from pylottone import extract_raw_pt
 from pylottone.constants import PILOTTONE_WAVEFORM_ID
+from pylottone.editer import autopick_sensing_coils
+from pylottone.reconstruction.coils import (
+    apply_prewhitening,
+    calculate_prewhitening,
+)
 from pylottone.selectionui import get_multiple_filepaths
-from pylottone.trajectory import remove_readout_os, calc_fovshift_phase
-from pylottone.triggering import pt_ecg_jitter, extract_triggers
-from pylottone.signal import find_freq_qifft
+from pylottone.trajectory import remove_readout_os
+from pylottone.triggering import extract_triggers, pt_ecg_jitter
 
 # %%
 # Read the data in
@@ -44,11 +48,13 @@ def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
     traj = loadmat(os.path.join(data_dir, traj_name), squeeze_me=True)
 
     n_unique_angles = int(traj['param']['repetitions'])
+    pre_discard = int(traj['param']['pre_discard'])
 
     kx = traj['kx'][:,:]
     ky = traj['ky'][:,:]
+    kx = np.vstack((np.zeros((pre_discard, n_unique_angles)), traj['kx'][:,:]))
+    ky = np.vstack((np.zeros((pre_discard, n_unique_angles)), traj['ky'][:,:]))
     dt = float(traj['param']['dt'])
-    pre_discard = int(traj['param']['pre_discard'])
 
     data = np.array([arm.data[:,:] for arm in acq_list]).transpose((2, 0, 1))
 
@@ -77,7 +83,7 @@ def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
     samp_time_pt = time_acq[1] - time_acq[0]
 
     ksp_measured = data[:,:,mri_coils]
-    ksp_sniffer  = data[:,:,sensing_coils]
+    # ksp_sniffer  = data[:,:,sensing_coils]
 
     ## Process ECG waveform
     ecg, _ = mrdhelper.waveforms_asarray(wf_list)
@@ -100,59 +106,7 @@ def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
 
     f_diff = f0 - f_pt
 
-    # ================================
-    # Demodulate any shifts
-    # ================================
-    phase_mod_rads = calc_fovshift_phase(
-        np.vstack((np.zeros((pre_discard, n_unique_angles)), kx)), 
-        np.vstack((np.zeros((pre_discard, n_unique_angles)), ky)), 
-        acq_list[0])
-    phase_mod_rads = [phase_mod_rads[:,ii%n_unique_angles] for ii in range(n_acq)]
-    phase_mod_rads = np.array(phase_mod_rads)[:, :].transpose()[:,:,None]
-
-    # Apply the negative of the phase
-    ksp_sniffer_  = ksp_sniffer*phase_mod_rads
-    ksp_measured_ = ksp_measured*phase_mod_rads
-
-    # plt.figure()
-    # plt.plot(np.abs(pt.signal.to_hybrid_kspace(ksp_measured[:,10,0])))
-    # plt.plot(np.abs(pt.signal.to_hybrid_kspace(ksp_measured_[:,10,0])))
-    # plt.show()
-
-    fcorrmin = find_freq_qifft(ksp_measured_[:,:,:], df, f_diff, 3e3, 4, (2))
-
-    ksp_window = np.ones(ksp_measured_.shape[0])
-    # ksp_window = ksp_window[nc:]
-    ksp_measured_ = ksp_measured_*ksp_window[:,None,None]
-    ksp_sniffer_ = ksp_sniffer_*ksp_window[:,None,None]
-
-    time_acq = np.arange(0, ksp_measured_.shape[0])*dt
-
-    ksp_ptsubbed_, pt_sig_fit = pt.est_dtft(time_acq, ksp_measured_, np.array([f_diff])-fcorrmin, ksp_window)
-    _, pt_sig_fit_sniffer = pt.est_dtft(time_acq, ksp_sniffer_, np.array([f_diff])-fcorrmin, ksp_window)
-
-    pt_sig_fit = np.abs(pt_sig_fit)
-    pt_sig_fit_sniffer = np.abs(pt_sig_fit_sniffer)
-    pt_sig = np.squeeze(pt_sig_fit - np.mean(pt_sig_fit, axis=1, keepdims=True))
-
-    # Filter a bandwidth around the pilot tone frequency.
-    fbw = 100e3
-    freq_axis = ifftshift(np.fft.fftfreq(ksp_ptsubbed_.shape[0], dt))
-
-    ksp_win = tukey(2*ksp_ptsubbed_.shape[0], alpha=0.1)
-    ksp_win = ksp_win[(ksp_ptsubbed_.shape[0]):,None,None]
-    ksp_ptsubbed_ = ksp_ptsubbed_*ksp_win # kspace filtering to remove spike at the end of the acquisition
-
-    ptmdlflt = np.ones((ksp_ptsubbed_.shape[0]))
-    ptmdlflt[(freq_axis < (f_diff+fbw/2)) & (freq_axis > (f_diff-fbw/2))] = 0
-    ksp_ptsubbed_ = pt.signal.from_hybrid_kspace(ptmdlflt[:,None,None]*pt.signal.to_hybrid_kspace(ksp_ptsubbed_))
-
-    # plt.figure()
-    # plt.plot(freq_axis, np.abs(pt.signal.to_hybrid_kspace(ksp_ptsubbed_[:,10,0])))
-    # plt.xlabel('Frequency [Hz]')
-    # plt.show()
-
-    pt_sig_clean2 = pt.signal.angle_dependant_filtering(pt_sig, n_unique_angles)
+    pt_raw, ksp_ptsubbed = extract_raw_pt(ksp_measured, kx, ky, n_unique_angles, acq_list[0], f_diff, df, dt, method='wPCA', freq_correction=True, return_complex=False)
 
     # %% [markdown]
     # ## QA and ECG PT Jitter
@@ -175,7 +129,7 @@ def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
                                     'corr_threshold': cfg['pilottone']['cardiac']['corr_threshold'],
                                     'corr_init_ch': np.nonzero(coil_name == cfg['pilottone']['cardiac']['initial_channel'])[0][0],                           
                                     'separation_method': cfg['pilottone']['cardiac']['separation_method'], # 'sobi', 'pca'
-
+                                    'num_lags': 375, # SOBI number of lags
                         },
                         'debug': {
                             'selected_coils': cfg['pilottone']['debug']['selected_coils'],
@@ -187,13 +141,14 @@ def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
 
     sg_filter_len = 81
 
-    pt_respiratory, pt_cardiac = pt.extract_pilottone_navs(pt_sig_clean2, f_samp, pt_extract_params)
+    pt_respiratory, pt_cardiac = pt.extract_pilottone_navs(pt_raw, f_samp, pt_extract_params)
     
     # %% Save the waveforms separately if requested
 
     if cfg['saving']['save_pt_separate']:
         print('Saving waveforms separately...')
         np.savez(os.path.join(data_dir, f"{ismrmrd_data_fullpath.split('/')[-1][:-3]}_ptwaveforms.npz"), 
+                 pt_raw=pt_raw,
                  pt_respiratory=pt_respiratory, 
                  pt_cardiac=pt_cardiac,
                  time_pt=time_pt)
@@ -259,11 +214,6 @@ def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
     # # Save the PT subtracted k-space
 
     if cfg['saving']['save_model_subtracted']:
-        from pathlib import Path
-
-        from pylottone.editer import autopick_sensing_coils
-
-        ksp_ptsubbed = ksp_ptsubbed_*np.conj(phase_mod_rads)
 
         # Read the noise data in
         print(f'Reading {ismrmrd_noise_fullpath}...')
@@ -284,10 +234,6 @@ def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
         noise = np.transpose(np.asarray(noise_list), (1,0,2)).reshape((noise_list[0].shape[0], -1))[mri_coils,:]
 
         if cfg['pilottone']['prewhiten']:
-            from pylottone.reconstruction.coils import (
-                apply_prewhitening,
-                calculate_prewhitening,
-            )
 
             print('Prewhitening the raw data...')
             dmtx = calculate_prewhitening(noise)
@@ -304,7 +250,6 @@ def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
         if remove_os:
             ksp_ptsubbed = remove_readout_os(ksp_ptsubbed)
             n_samp = n_samp // 2
-
 
         output_dir_fullpath = os.path.join(data_dir, 'raw', 'h5_proc')
         output_data_fullpath = os.path.join(output_dir_fullpath, f"{ismrmrd_data_fullpath.split('/')[-1][:-3]}_mdlsub.h5")
