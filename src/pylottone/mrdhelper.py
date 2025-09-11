@@ -1,5 +1,5 @@
 import copy
-from pylottone.constants import ECG_WAVEFORM_ID, PILOTTONE_WAVEFORM_ID, PILOTTONE_CH
+from pylottone.constants import ECG_WAVEFORM_ID, PILOTTONE_WAVEFORM_ID, PILOTTONE_CH, EXT1_WAVEFORM_ID, RESPPT_WAVEFORM_ID
 import ismrmrd
 import numpy as np
 import os
@@ -73,7 +73,7 @@ def read_waveforms(filepath: str, dataset_name: str = 'dataset') -> list[ismrmrd
 
     return waveform_list, xml_header
 
-def waveforms_asarray(waveform_list: list[ismrmrd.Waveform], ecg_channel: int=0) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
+def waveforms_asarray(waveform_list: list[ismrmrd.Waveform], ecg_channel: int=0, ext_as_ecg: bool=False) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
     '''Converts a list of waveforms to numpy arrays for ECG and PT.
         Parameters
         ----------
@@ -86,19 +86,33 @@ def waveforms_asarray(waveform_list: list[ismrmrd.Waveform], ecg_channel: int=0)
             Numpy array of waveforms.
         pt : dict[np.array, np.array, np.array, np.array, np.array, float]
     '''
-    # TODO: There is no check if the waveform is empty. This will cause an error.
+
     ecg_waveform = []
     ecg_trigs = []
+    ext1_ts = []
+    ecg_ts = []
     resp_waveform = []
+    respbeat_waveform = []
     ecg_init_timestamp = 0
     pt_init_timestamp = 0
+    respbeat_init_timestamp = 0
+    respbeat_ts = []
     for wf in waveform_list:
-        if wf.getHead().waveform_id == ECG_WAVEFORM_ID:
+        if ext_as_ecg and wf.getHead().waveform_id == EXT1_WAVEFORM_ID:
+            ecg_waveform.append(wf.data[0,:]+2048)
+            ecg_trigs.append(wf.data[1,:]*8)
+            if ecg_init_timestamp == 0:
+                ecg_init_timestamp = wf.time_stamp
+                ecg_sampling_time = wf.getHead().sample_time_us*1e-6
+            ext1_ts.append(wf.time_stamp + np.arange(wf.data.shape[1])*ecg_sampling_time/2.5e-3)
+
+        elif not ext_as_ecg and wf.getHead().waveform_id == ECG_WAVEFORM_ID:
             ecg_waveform.append(wf.data[ecg_channel,:])
             ecg_trigs.append(wf.data[4,:])
             if ecg_init_timestamp == 0:
                 ecg_init_timestamp = wf.time_stamp
                 ecg_sampling_time = wf.getHead().sample_time_us*1e-6 # [us] -> [s]
+            ecg_ts.append(wf.time_stamp + np.arange(wf.data.shape[1])*ecg_sampling_time/2.5e-3)
         # If there are multiple PT waveforms, last one will overwrite the previous ones.
         elif wf.getHead().waveform_id == PILOTTONE_WAVEFORM_ID:
             resp_waveform = wf.data[PILOTTONE_CH['RESP'],:]
@@ -109,6 +123,12 @@ def waveforms_asarray(waveform_list: list[ismrmrd.Waveform], ecg_channel: int=0)
 
             pt_sampling_time = wf.getHead().sample_time_us*1e-6
             pt_init_timestamp = wf.time_stamp
+        elif wf.getHead().waveform_id == RESPPT_WAVEFORM_ID:
+            respbeat_waveform.append(wf.data[0,:])
+            if respbeat_init_timestamp == 0:
+                respbeat_init_timestamp = wf.time_stamp
+                respbeat_sampling_time = wf.getHead().sample_time_us*1e-6
+            respbeat_ts.append(wf.time_stamp + np.arange(wf.data.shape[1])*respbeat_sampling_time/2.5e-3)
 
     if len(ecg_waveform) == 0:
         warnings.warn('No ECG waveform found.')
@@ -117,15 +137,30 @@ def waveforms_asarray(waveform_list: list[ismrmrd.Waveform], ecg_channel: int=0)
         ecg_waveform = (np.asarray(np.concatenate(ecg_waveform, axis=0), dtype=float)-2048)
         ecg_waveform = ecg_waveform/np.percentile(ecg_waveform, 99.9)
         ecg_trigs = (np.concatenate(ecg_trigs, axis=0)/2**14).astype(int)
-        time_ecg = np.arange(ecg_waveform.shape[0])*ecg_sampling_time + ecg_init_timestamp*2.5e-3
+        if ext_as_ecg:
+            time_ecg = np.concatenate(ext1_ts, axis=0)*2.5e-3
+        else:
+            time_ecg = np.arange(ecg_waveform.shape[0])*ecg_sampling_time + ecg_init_timestamp*2.5e-3
         ecg_ = {'time_ecg': time_ecg, 'ecg_waveform': ecg_waveform, 'ecg_trigs': ecg_trigs, 'ecg_sampling_time': ecg_sampling_time, 'ecg_init_timestamp': ecg_init_timestamp}
     
-    if len(resp_waveform) == 0:
+    if len(resp_waveform) == 0 and len(respbeat_waveform) == 0:
         warnings.warn('No PT waveform found.')
         return ecg_, None
     
-    time_pt = np.arange(resp_waveform.shape[0])*pt_sampling_time + pt_init_timestamp*2.5e-3
-    pt_ = {'time_pt': time_pt, 'resp_waveform': resp_waveform, 'pt_cardiac': pt_cardiac, 'pt_cardiac_trigs': pt_cardiac_trigs, 'pt_cardiac_derivative': pt_cardiac_derivative, 'pt_derivative_trigs': pt_derivative_trigs, 'pt_sampling_time': pt_sampling_time, 'pt_init_timestamp': pt_init_timestamp}
+    pt_ = {}
+    if len(respbeat_waveform) > 0:
+        respbeat_waveform = (np.asarray(np.concatenate(respbeat_waveform, axis=0), dtype=float))
+        respbeat_waveform -= np.mean(respbeat_waveform)
+        respbeat_waveform /= np.percentile(respbeat_waveform, 99.9)
+        time_respbeat = np.concatenate(respbeat_ts, axis=0)*2.5e-3
+        pt_['time_respbeat'] = time_respbeat
+        pt_['respbeat_waveform'] = respbeat_waveform
+        pt_['respbeat_sampling_time'] = respbeat_sampling_time
+        pt_['respbeat_init_timestamp'] = respbeat_init_timestamp
+
+    if len(resp_waveform) > 0:
+        time_pt = np.arange(resp_waveform.shape[0])*pt_sampling_time + pt_init_timestamp*2.5e-3
+        pt_.update({'time_pt': time_pt, 'resp_waveform': resp_waveform, 'pt_cardiac': pt_cardiac, 'pt_cardiac_trigs': pt_cardiac_trigs, 'pt_cardiac_derivative': pt_cardiac_derivative, 'pt_derivative_trigs': pt_derivative_trigs, 'pt_sampling_time': pt_sampling_time, 'pt_init_timestamp': pt_init_timestamp})
 
     return ecg_, pt_
 
