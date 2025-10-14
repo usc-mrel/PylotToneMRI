@@ -183,7 +183,7 @@ def pickcoilsbycorr(insig, start_ch, corr_th):
 
     return accept_list, sign_list, corrs
 
-def check_waveform_polarity(waveform: npt.NDArray[np.float64], prominence: float=0.5) -> int:
+def check_waveform_polarity(waveform: npt.NDArray[np.float64], prominence: float=0.5, method:Literal['std', 'width']='std') -> int:
     '''Check the polarity of the waveform and return the sign.
     The logic is, peaks looking up should be narrower than the bottom side for better triggering.
     
@@ -191,6 +191,7 @@ def check_waveform_polarity(waveform: npt.NDArray[np.float64], prominence: float
     ----------
     waveform (np.array): Waveform to check.
     prominence (float): Prominence threshold for peak detection.
+    method (str): Method to use for checking the polarity. 'std' for standard deviation of peak distances, 'width' for peak widths.
 
     Returns:
     ----------
@@ -202,17 +203,20 @@ def check_waveform_polarity(waveform: npt.NDArray[np.float64], prominence: float
     p1, d1 = find_peaks(waveform_, prominence=prominence)
     w1,_,_,_ = peak_widths(waveform_, p1)
 
-    waveform_ = -waveform_
+    waveform_ = -1*waveform.copy()
     waveform_ -= np.percentile(waveform_, 5)
     waveform_ = waveform_/np.percentile(waveform_, 99)
 
-    p2, d2 = find_peaks(-waveform, prominence=prominence)
-    w2,_,_,_ = peak_widths(-waveform, p2)
+    p2, d2 = find_peaks(waveform_, prominence=prominence)
+    w2,_,_,_ = peak_widths(waveform_, p2)
 
     wf_sign = 1
-    if np.sum(w1) > np.sum(w2):
-        print('Cardiac waveform looks flipped. Flipping it..')
-        wf_sign = -1
+    if method == 'std':
+        if np.std(np.diff(p1)) > np.std(np.diff(p2)):
+            wf_sign = -1
+    elif method == 'width':
+        if np.sum(w1) > np.sum(w2):
+            wf_sign = -1
 
     return wf_sign
 

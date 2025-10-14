@@ -181,6 +181,7 @@ def read_mrd(ismrmrd_data_fullpath: str) -> tuple[list[ismrmrd.Acquisition], lis
             XML header.
         '''
     start = time.time()
+    print('=' * 50)
     print(f'Reading {ismrmrd_data_fullpath}...')
 
     with ismrmrd.File(ismrmrd_data_fullpath, mode='r') as mrd:
@@ -203,7 +204,8 @@ def read_mrd(ismrmrd_data_fullpath: str) -> tuple[list[ismrmrd.Acquisition], lis
 
     end = time.time()
     print(f'Finished reading {ismrmrd_data_fullpath} in {end - start:.2f} seconds.')
-    
+    print('=' * 50)
+
     return acq_list, wf_list, hdr
 
 def read_adj(ismrmrd_noise_fullpath: str) -> tuple[np.ndarray, np.ndarray, np.ndarray, ismrmrd.xsd.ismrmrdHeader]:
