@@ -3,11 +3,13 @@ Contains signal processing functions.
 Author: Bilal Tasdelen
 '''
 
-from numpy.fft import ifft, ifftshift, fft, fftshift, fftn, ifftn
 import numpy as np
 import numpy.typing as npt
-from scipy.signal.windows import tukey
 import pyfftw
+import scipy as sp
+from numpy.fft import fft, fftn, fftshift, ifft, ifftn, ifftshift
+from scipy.signal.windows import tukey
+
 
 def cifft(data, axis):
     '''Centered IFFT.'''
@@ -259,3 +261,32 @@ def angle_dependant_filtering(sig: npt.NDArray[np.float64], n_unique_angles: int
     # plt.plot(p(angles[I])[Irev], '*')
     return sig_filtered
 
+def xcorr_channels(measurements: np.ndarray, reference_channel: int = 0):
+    """
+    Compute cross-correlation between channels and a reference channel.
+
+    Parameters:
+    measurements (np.ndarray): [n_samples x n_channels] 2D array where each column represents a channel.
+    reference_channel (int): Index of the reference channel.
+
+    Returns:
+    delays (np.ndarray): List of delays for each channel relative to the reference channel.
+    max_corrs (np.ndarray): List of maximum correlation values for each channel.
+    pearson_corrs (np.ndarray): List of Pearson correlation coefficients for each channel.
+    """
+    delays = []
+    max_corrs = []
+    pearson_corrs = []
+
+    n_samples = measurements.shape[0]
+    for ch in range(measurements.shape[1]):
+        corrs = sp.signal.correlate(measurements[:, reference_channel], measurements[:, ch], mode='same')
+        pearson_corrs.append(np.corrcoef(measurements[:, reference_channel], measurements[:, ch])[0,1])
+        max_corr_pos = np.argmax(np.abs(corrs))
+        
+        max_corrs.append(corrs[max_corr_pos]/(np.std(measurements[:, reference_channel])*np.std(measurements[:, ch])*n_samples))
+
+        delay = max_corr_pos - n_samples//2
+        delays.append(delay)
+
+    return np.array(delays), np.array(max_corrs), np.array(pearson_corrs)

@@ -5,6 +5,7 @@ import ismrmrd
 import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
+import scipy as sp
 from numpy.fft import fft, ifft
 from scipy.linalg import lstsq
 from scipy.signal import find_peaks, peak_widths, savgol_filter
@@ -14,6 +15,7 @@ from scipy.sparse.linalg import svds
 from .signal import (
     angle_dependant_filtering,
     apply_filter_freq,
+    cfftn,
     designbp_tukeyfilt_freq,
     designlp_tukeyfilt_freq,
     find_freq_qifft,
@@ -561,4 +563,20 @@ def process_cplx_pt(pt_raw: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     pt_raw_mag = np.squeeze(pt_raw_mag - np.mean(pt_raw_mag, axis=0, keepdims=True))
 
     return pt_raw_mag, pt_raw_ang
+
+def pick_cardiac_source(latent_vectors: np.ndarray, f_samp: float, fmask_low: float=0.66, fmask_high: float=3.0) -> tuple[np.ndarray, np.ndarray]:
+
+    n_pt_samp = latent_vectors.shape[0]
+    df = f_samp/n_pt_samp
+    faxis = np.arange(0, f_samp, df) - (f_samp - (n_pt_samp % 2)*df)/2
+    f_mask = (faxis > fmask_low) & (faxis < fmask_high) # By default, assumes between 40 bpm to 180 bpm
+    ptc_freq_max = np.max(np.abs(cfftn(latent_vectors, axes=(0,))[f_mask,:]), axis=0)
+    picked_by_spec = ptc_freq_max > np.max(ptc_freq_max)*0.9
+    xenv, _ = sp.signal.envelope(latent_vectors[n_pt_samp//10:(-n_pt_samp//10), picked_by_spec], bp_in=(1,80), axis=0)
+    std_env = np.std(xenv, axis=0)
+
+    # print(f"Picked components by spectral magnitude: {np.where(picked_by_spec)[0]}")
+    # print(f"Picked components by envelope std: {std_env}")
+    # print(f"Final picked components: {np.where(picked_by_spec)[0][np.argmin(std_env)]}")
+    return np.where(picked_by_spec)[0], std_env
 

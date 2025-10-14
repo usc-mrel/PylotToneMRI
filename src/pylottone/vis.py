@@ -505,3 +505,96 @@ def ndv(data, ax: matplotlib.axes.Axes = None,  YX = [-2,-1], voxel_shape=None, 
     rbCallback()
     plt.tight_layout()
     
+def draw_coils(axs, coil_name, colors, info=None, all_coils=None):
+
+    if all_coils is None:
+        all_coils = {
+            'Body_6:1:B11': [+1, 5], 'Body_6:1:B12': [+0, 5], 'Body_6:1:B13': [-1, 5],
+            'Body_6:1:B21': [+1, 4], 'Body_6:1:B22': [+0, 4], 'Body_6:1:B23': [-1, 4],
+            'Spine_18:1:S1P': [+1, +2], 'Spine_18:1:S1S': [0, +2], 'Spine_18:1:S1T': [-1, +2],
+            'Spine_18:1:S2P': [+1, +1], 'Spine_18:1:S2S': [0, +1], 'Spine_18:1:S2T': [-1, +1],
+            'Spine_18:1:S3P': [+1,  0], 'Spine_18:1:S3S': [0,  0], 'Spine_18:1:S3T': [-1,  0],
+            'Spine_18:1:S4P': [+1, -1], 'Spine_18:1:S4S': [0, -1], 'Spine_18:1:S4T': [-1, -1],
+            'Spine_18:1:S5P': [+1, -2], 'Spine_18:1:S5S': [0, -2], 'Spine_18:1:S5T': [-1, -2]
+            }
+        
+    for i, coil in enumerate(coil_name):
+        if coil in all_coils:
+            # print(f'Coil: {coil}, Position: {all_coils[coil]}')
+            # Create a circle for each coil position
+            circle = Circle(all_coils[coil], radius=0.5, color=colors[i], fill=False, lw=2)
+            axs.text(all_coils[coil][0], all_coils[coil][1]-0.2, coil, fontsize=12, ha='center', va='center')
+            if info is not None:
+                axs.text(all_coils[coil][0], all_coils[coil][1]+0.2, info[i], fontsize=10, ha='center', va='center')
+            axs.add_patch(circle)
+
+    axs.text(2.3, 2, 'Patient\nLeft', fontsize=14, ha='center', va='center')
+    axs.text(-2.3, 2, 'Patient\nRight', fontsize=14, ha='center', va='center')
+    axs.axis('equal')
+    axs.set_xlim(-2, 6)
+    axs.set_ylim(-3, 2)
+    axs.axis('off')
+
+
+def plot_rawpt(pt_raw: np.ndarray, coil_name: np.ndarray, time_pt: np.ndarray, sort: bool=True, drawcoils: bool = True) -> Tuple[plt.Figure, np.ndarray]:
+    if sort:
+        Isort = np.argsort(coil_name)
+    else:
+        Isort = np.arange(pt_raw.shape[1])
+    
+    spacing = np.abs(pt_raw).max()*pt_raw.shape[1]/2
+    ptb = np.linspace(spacing, -spacing, pt_raw.shape[1])
+    if drawcoils:
+        f, axs = plt.subplots(1,2)
+    else: 
+        f, axs = plt.subplots(1,1)
+    axs = np.atleast_1d(axs)
+    f.set_size_inches(10, 10)
+    lines = axs[0].plot(time_pt, ptb+pt_raw[:,Isort])
+    for i, coil in enumerate((coil_name)[Isort]):
+        axs[0].text(time_pt[-1]+10, ptb[i]+np.mean(pt_raw[:,i]), coil, fontsize=10, ha='right', va='center', color=lines[i].get_color())
+    axs[0].set_xlabel('Time [s]')
+
+    axs[0].set_xlim(0, time_pt[-1]+10)
+    axs[0].set_yticks([])
+    default_colors = [line.get_color() for line in lines]
+    if drawcoils:
+        draw_coils(axs[1], (coil_name)[Isort], default_colors)
+    plt.suptitle('Raw Pilot Tones and coil positions', fontsize=16)
+    plt.tight_layout()
+    return f, axs
+
+def plot_rawpt_compare(pt_raw: np.ndarray, pt_raw2: np.ndarray, coil_name: np.ndarray, time_pt: np.ndarray, sort: bool=True):
+    if sort:
+        Isort = np.argsort(coil_name)
+    else:
+        Isort = np.arange(pt_raw.shape[1])
+    
+    spacing = np.abs(pt_raw).max()*pt_raw.shape[1]/2
+    ptb = np.linspace(spacing, -spacing, pt_raw.shape[1])
+    f, axs = plt.subplots(1,2)
+    axs = np.atleast_1d(axs)
+    f.set_size_inches(10, 10)
+    lines = axs[0].plot(time_pt, ptb+pt_raw[:,Isort])
+    for i, coil in enumerate((coil_name)[Isort]):
+        axs[0].text(time_pt[-1]+10, ptb[i]+np.mean(pt_raw[:,i]), coil, fontsize=10, ha='right', va='center', color=lines[i].get_color())
+    axs[0].set_xlabel('Time [s]')
+
+    axs[0].set_xlim(0, time_pt[-1]+10)
+    axs[0].set_yticks([])
+
+    lines = axs[1].plot(time_pt, ptb+pt_raw2[:,Isort])
+    for i, coil in enumerate((coil_name)[Isort]):
+        axs[1].text(time_pt[-1]+10, ptb[i]+np.mean(pt_raw2[:,i]), coil, fontsize=10, ha='right', va='center', color=lines[i].get_color())  
+    axs[1].set_xlabel('Time [s]')
+    axs[1].set_xlim(0, time_pt[-1]+10)
+    axs[1].set_yticks([])
+    axs[1].set_ylim(axs[0].get_ylim())
+
+    # Shared x-axis
+    axs[0].sharey(axs[1])
+    axs[0].sharex(axs[1])
+
+    plt.suptitle('Raw Pilot Tones and coil positions', fontsize=16)
+    plt.tight_layout()
+    return f, axs
