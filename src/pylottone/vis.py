@@ -542,7 +542,8 @@ def plot_rawpt(pt_raw: np.ndarray, coil_name: np.ndarray, time_pt: np.ndarray, s
     else:
         Isort = np.arange(pt_raw.shape[1])
     
-    spacing = np.abs(pt_raw).max()*pt_raw.shape[1]/2
+    pt_raw_ = pt_raw - np.mean(pt_raw, axis=0, keepdims=True)
+    spacing = np.abs(pt_raw_).max()*pt_raw.shape[1]/2
     ptb = np.linspace(spacing, -spacing, pt_raw.shape[1])
     if drawcoils:
         f, axs = plt.subplots(1,2)
@@ -550,12 +551,12 @@ def plot_rawpt(pt_raw: np.ndarray, coil_name: np.ndarray, time_pt: np.ndarray, s
         f, axs = plt.subplots(1,1)
     axs = np.atleast_1d(axs)
     f.set_size_inches(10, 10)
-    lines = axs[0].plot(time_pt, ptb+pt_raw[:,Isort])
+    lines = axs[0].plot(time_pt, ptb+pt_raw_[:,Isort])
     for i, coil in enumerate((coil_name)[Isort]):
-        axs[0].text(time_pt[-1]+10, ptb[i]+np.mean(pt_raw[:,i]), coil, fontsize=10, ha='right', va='center', color=lines[i].get_color())
+        axs[0].text(time_pt[-1]*1.1, ptb[i]+np.mean(pt_raw_[:,i]), coil, fontsize=10, ha='right', va='center', color=lines[i].get_color())
     axs[0].set_xlabel('Time [s]')
 
-    axs[0].set_xlim(0, time_pt[-1]+10)
+    axs[0].set_xlim(0, time_pt[-1]*1.1)
     axs[0].set_yticks([])
     default_colors = [line.get_color() for line in lines]
     if drawcoils:
@@ -570,24 +571,26 @@ def plot_rawpt_compare(pt_raw: np.ndarray, pt_raw2: np.ndarray, coil_name: np.nd
     else:
         Isort = np.arange(pt_raw.shape[1])
     
-    spacing = np.abs(pt_raw).max()*pt_raw.shape[1]/2
+    pt_raw_ = pt_raw - np.mean(pt_raw, axis=0, keepdims=True)
+    pt_raw2_ = pt_raw2 - np.mean(pt_raw2, axis=0, keepdims=True)
+    spacing = np.abs(pt_raw_).max()*pt_raw.shape[1]
     ptb = np.linspace(spacing, -spacing, pt_raw.shape[1])
     f, axs = plt.subplots(1,2)
     axs = np.atleast_1d(axs)
     f.set_size_inches(10, 10)
-    lines = axs[0].plot(time_pt, ptb+pt_raw[:,Isort])
+    lines = axs[0].plot(time_pt, ptb+pt_raw_[:,Isort])
     for i, coil in enumerate((coil_name)[Isort]):
-        axs[0].text(time_pt[-1]+10, ptb[i]+np.mean(pt_raw[:,i]), coil, fontsize=10, ha='right', va='center', color=lines[i].get_color())
+        axs[0].text(time_pt[-1]*1.1, ptb[i]+np.mean(pt_raw_[:,i]), coil, fontsize=10, ha='right', va='center', color=lines[i].get_color())
     axs[0].set_xlabel('Time [s]')
 
-    axs[0].set_xlim(0, time_pt[-1]+10)
+    axs[0].set_xlim(0, time_pt[-1]*1.1)
     axs[0].set_yticks([])
 
-    lines = axs[1].plot(time_pt, ptb+pt_raw2[:,Isort])
+    lines = axs[1].plot(time_pt, ptb+pt_raw2_[:,Isort])
     for i, coil in enumerate((coil_name)[Isort]):
-        axs[1].text(time_pt[-1]+10, ptb[i]+np.mean(pt_raw2[:,i]), coil, fontsize=10, ha='right', va='center', color=lines[i].get_color())  
+        axs[1].text(time_pt[-1]*1.1, ptb[i]+np.mean(pt_raw2_[:,i]), coil, fontsize=10, ha='right', va='center', color=lines[i].get_color())  
     axs[1].set_xlabel('Time [s]')
-    axs[1].set_xlim(0, time_pt[-1]+10)
+    axs[1].set_xlim(0, time_pt[-1]*1.1)
     axs[1].set_yticks([])
     axs[1].set_ylim(axs[0].get_ylim())
 

@@ -443,10 +443,12 @@ def calibrate_pt(pt_sig, f_samp: float, params: dict):
     if params['cardiac']['separation_method'] == 'pca':
         Ucard, S, Vcard = svds(pt_cardiac_freqs[:,accept_list_cardiac], k=1)
         pt_cardiac = Ucard
-        pt_cardiac = pt_cardiac[:,0]
+        chs, stds = pick_cardiac_source(pt_cardiac, f_samp)
+        pt_cardiac = pt_cardiac[chs[np.argmin(stds)],:]
     elif params['cardiac']['separation_method'] == 'sobi':
-        pt_cardiac, _, Vcard = sobi(pt_cardiac_freqs[:,accept_list_cardiac].T, num_lags=375)
-        pt_cardiac = pt_cardiac[0,:]
+        pt_cardiac, _, Vcard = sobi(pt_cardiac_freqs[:,accept_list_cardiac].T, num_lags=params['cardiac']['num_lags'])
+        chs, stds = pick_cardiac_source(pt_cardiac.T, f_samp)
+        pt_cardiac = pt_cardiac[chs[np.argmin(stds)],:]
 
     # Normalize navs before returning.
     # Here, I am using prctile instead of the max to avoid weird spikes.
@@ -565,6 +567,21 @@ def process_cplx_pt(pt_raw: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return pt_raw_mag, pt_raw_ang
 
 def pick_cardiac_source(latent_vectors: np.ndarray, f_samp: float, fmask_low: float=0.66, fmask_high: float=3.0) -> tuple[np.ndarray, np.ndarray]:
+    ''' Picks the cardiac source from the latent vectors using frequency content analysis. 
+    Also computes the standard deviation of the envelope of the picked sources.
+
+    Parameters:
+    ----------
+    latent_vectors (np.array): Latent vectors of shape (n_samples, n_sources).
+    f_samp (float): Sampling frequency of the PT signal.
+    fmask_low (float): Lower frequency bound for cardiac frequency mask [Hz].
+    fmask_high (float): Upper frequency bound for cardiac frequency mask [Hz].
+
+    Returns:
+    ----------
+    idxs (np.ndarray): Indices of picked cardiac sources.
+    std_env (np.ndarray): Corresponding standard deviations of envelopes.
+    '''
 
     n_pt_samp = latent_vectors.shape[0]
     df = f_samp/n_pt_samp
@@ -575,8 +592,32 @@ def pick_cardiac_source(latent_vectors: np.ndarray, f_samp: float, fmask_low: fl
     xenv, _ = sp.signal.envelope(latent_vectors[n_pt_samp//10:(-n_pt_samp//10), picked_by_spec], bp_in=(1,80), axis=0)
     std_env = np.std(xenv, axis=0)
 
-    # print(f"Picked components by spectral magnitude: {np.where(picked_by_spec)[0]}")
-    # print(f"Picked components by envelope std: {std_env}")
-    # print(f"Final picked components: {np.where(picked_by_spec)[0][np.argmin(std_env)]}")
     return np.where(picked_by_spec)[0], std_env
 
+def pick_source_bypeak(latent_vectors: np.ndarray, f_samp: float, fmask_low: float=0.66, fmask_high: float=3.0, threshold=0.9) -> tuple[np.ndarray, np.ndarray]:
+    ''' Similar to pick_cardiac_source, but with adjustable threshold.
+    Picks the cardiac source from the latent vectors using frequency content analysis.
+    Also computes the standard deviation of the envelope of the picked sources.
+    Parameters:
+    ----------
+    latent_vectors (np.array): Latent vectors of shape (n_samples, n_sources).
+    f_samp (float): Sampling frequency of the PT signal.
+    fmask_low (float): Lower frequency bound for cardiac frequency mask [Hz].
+    fmask_high (float): Upper frequency bound for cardiac frequency mask [Hz].
+    threshold (float): Threshold for picking sources based on frequency content.
+    Returns:
+    ----------
+    idxs (np.ndarray): Indices of picked cardiac sources.
+    std_env (np.ndarray): Corresponding standard deviations of envelopes.
+    '''
+    
+    n_pt_samp = latent_vectors.shape[0]
+    df = f_samp/n_pt_samp
+    faxis = np.arange(0, f_samp, df) - (f_samp - (n_pt_samp % 2)*df)/2
+    f_mask = (faxis > fmask_low) & (faxis < fmask_high) # By default, assumes between 40 bpm to 180 bpm
+    ptc_freq_max = np.max(np.abs(cfftn(latent_vectors, axes=(0,))[f_mask,:]), axis=0)
+    picked_by_spec = ptc_freq_max > np.max(ptc_freq_max)*threshold
+    xenv, _ = sp.signal.envelope(latent_vectors[n_pt_samp//10:(-n_pt_samp//10), picked_by_spec], bp_in=(1,80), axis=0)
+    std_env = np.std(xenv, axis=0)
+
+    return np.where(picked_by_spec)[0], std_env

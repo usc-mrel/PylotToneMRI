@@ -9,6 +9,7 @@ import pyfftw
 import scipy as sp
 from numpy.fft import fft, fftn, fftshift, ifft, ifftn, ifftshift
 from scipy.signal.windows import tukey
+from scipy.signal import firwin, convolve
 
 
 def cifft(data, axis):
@@ -226,6 +227,58 @@ def apply_filter_freq(sig: npt.NDArray[np.float32], flt: npt.NDArray[np.complex6
     sig_filt = sig_filt[N//2:(N//2 + N), :]
     
     return sig_filt
+
+def filter_freq(sig: np.ndarray, Fstop1, Fstop2, Fs: float, pad_method:str ='symmetric'):
+    '''Filter the signal between Fstop1 and Fstop2 using Tukey window in frequency domain.
+        Parameters
+        ----------
+        sig : NDArray
+            [Nsamp x Nch] 2D Array that will be filtered in first dimension.
+        Fstop1 : float
+            Start frequency in Hz.
+        Fstop2: float
+            Stop frequency in Hz.
+        Fs : float
+            Sampling frequency in Hz.
+        pad_method : str
+            How will the signal be padded for linear convolution in frequency domain.
+            'negflip': Will flip and negate a portion of the original signal for padding.
+            'symmetric': Will flip the signal in time as padding.
+        
+        Returns
+        -------
+        sig_filt : NDArray
+            Filtered signal.
+    '''
+    N = sig.shape[0]
+    flt = designbp_tukeyfilt_freq(Fstop1, Fstop2, Fs, N)
+    sig_filt = apply_filter_freq(sig, flt, pad_method)
+    return sig_filt
+
+def firwin_filt(signal_in: np.ndarray, Fstart: float, Fstop: float, f_samp: float, num_taps: int = 1299) -> np.ndarray:
+    ''' Shortcut for designing and applying single band-pass firwin filter to multichannel data.
+
+    Parameters
+    ----------
+    signal_in : NDArray
+        [Nsamp x Nch] Multichannel input signal to be filtered.
+    Fstart : float
+        Start frequency of the band-pass filter.
+    Fstop : float
+        Stop frequency of the band-pass filter.
+    f_samp : float
+        Sampling frequency of the input signal.
+    num_taps : int
+        Number of taps in the FIR filter.
+
+    Returns
+    -------
+    NDArray
+        Filtered signal.
+    '''
+    h = firwin(num_taps, [Fstart, Fstop], fs=f_samp, window=('tukey', 1), pass_zero=False)
+    pt_filtered = convolve(signal_in, h[:, None], mode='same')
+    return pt_filtered
 
 def angle_dependant_filtering(sig: npt.NDArray[np.float64], n_unique_angles: int, angle_step:float=222.4922, pdegree:int=9) -> npt.NDArray[np.float64]:
     n_acq, nc = sig.shape[0:2]

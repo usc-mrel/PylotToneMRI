@@ -1,5 +1,6 @@
 import copy
-from pylottone.constants import ECG_WAVEFORM_ID, PILOTTONE_WAVEFORM_ID, PILOTTONE_CH, EXT1_WAVEFORM_ID, RESPPT_WAVEFORM_ID
+import wave
+from pylottone.constants import ECG_WAVEFORM_ID, PULSEOX_WAVEFORM_ID, PILOTTONE_WAVEFORM_ID, PILOTTONE_CH, EXT1_WAVEFORM_ID, RESPPT_WAVEFORM_ID
 import ismrmrd
 import numpy as np
 import os
@@ -163,6 +164,94 @@ def waveforms_asarray(waveform_list: list[ismrmrd.Waveform], ecg_channel: int=0,
         pt_.update({'time_pt': time_pt, 'resp_waveform': resp_waveform, 'pt_cardiac': pt_cardiac, 'pt_cardiac_trigs': pt_cardiac_trigs, 'pt_cardiac_derivative': pt_cardiac_derivative, 'pt_derivative_trigs': pt_derivative_trigs, 'pt_sampling_time': pt_sampling_time, 'pt_init_timestamp': pt_init_timestamp})
 
     return ecg_, pt_
+
+def waveforms_asarray2(wf_list: list[ismrmrd.Waveform]) -> dict:
+    '''An alternative function to sort and convert a list of waveforms to numpy arrays.
+        Parameters
+        ----------
+        wf_list : list[ismrmrd.Waveform]
+            List of waveforms.
+        
+        Returns
+        -------
+        waveform_dict : dict
+            Dictionary of waveforms. Possible keys are 'ecg', 'pulseox', 'resp', 'ext1'. 
+            Keys will only be present if the corresponding waveform is found.
+    '''
+    ecg = []
+    resp_pt = []
+    ext1 = []
+    pulseox = []
+    t_init_pox = 0
+    pulseox_sample_time = 0
+    t_init_ecg = 0
+    ecg_sample_time = 0
+    t_init_resp = 0
+    resp_sample_time = 0
+    t_init_ext1 = 0
+    ext1_sample_time = 0
+
+    for wf in wf_list:
+        if wf.waveform_id == ECG_WAVEFORM_ID:
+            ecg.append(wf.data)
+            if t_init_ecg == 0:
+                t_init_ecg = wf.time_stamp*2.5e-3
+                ecg_sample_time = wf.sample_time_us*1e-6
+        elif wf.waveform_id == PULSEOX_WAVEFORM_ID:
+            pulseox.append(wf.data)
+            if t_init_pox == 0:
+                t_init_pox = wf.time_stamp*2.5e-3
+                pulseox_sample_time = wf.sample_time_us*1e-6
+        elif wf.waveform_id == RESPPT_WAVEFORM_ID:
+            resp_pt.append(wf.data)
+            if t_init_resp == 0:
+                t_init_resp = wf.time_stamp*2.5e-3
+                resp_sample_time = wf.sample_time_us*1e-6
+        elif wf.waveform_id == EXT1_WAVEFORM_ID:
+            ext1.append(wf.data)
+            if t_init_ext1 == 0:
+                t_init_ext1 = wf.time_stamp*2.5e-3
+                ext1_sample_time = wf.sample_time_us*1e-6
+
+    waveform_dict = {}
+    ecg = np.concatenate(ecg, axis=1).T if len(ecg) > 0 else np.array([])
+    if len(ecg) > 0:
+        if np.isnan(ecg).all():
+            t_ecg = np.array([])
+        else:
+            ecg = ecg[:, :].astype(np.float32)
+            ecg -= np.percentile(ecg, 5, axis=0)
+            ecg /= np.max(np.abs(ecg), axis=0, keepdims=True)
+            t_ecg = np.arange(ecg.shape[0])*ecg_sample_time + t_init_ecg
+            waveform_dict['ecg'] = (t_ecg, ecg)
+
+    pulseox = np.concatenate(pulseox, axis=1).T if len(pulseox) > 0 else np.array([])
+    if len(pulseox) > 0:
+        if not np.isnan(pulseox).all() and not np.all(pulseox[:,1]):
+            pulseox_trigs = pulseox[:, 1].astype(np.int32)
+            pulseox_trigs[pulseox_trigs > 0] = 1
+            pulseox = pulseox[:, 0].astype(np.float32)
+            pulseox -= np.percentile(pulseox, 5, axis=0)
+            pulseox /= np.max(np.abs(pulseox), axis=0, keepdims=True)
+            t_pox = np.arange(pulseox.shape[0])*pulseox_sample_time + t_init_pox
+            waveform_dict['pulseox'] = (t_pox, pulseox, pulseox_trigs)
+
+    resp_pt = np.concatenate(resp_pt, axis=1).T if len(resp_pt) > 0 else np.array([])
+    if len(resp_pt) > 0:
+        resp_pt = resp_pt[:, 0].astype(np.float32)
+        resp_pt -= np.mean(resp_pt, axis=0, keepdims=True)
+        resp_pt /= np.max(np.abs(resp_pt), axis=0, keepdims=True)
+        t_resp = np.arange(resp_pt.shape[0])*resp_sample_time + t_init_resp
+        waveform_dict['resp'] = (t_resp, resp_pt)
+
+    ext1 = np.concatenate(ext1, axis=1).T if len(ext1) > 0 else np.array([])
+    if len(ext1) > 0:
+        ext1 = ext1[:, 1].astype(np.float32)
+        ext1[ext1 > 0] = 1
+        t_ext1 = np.arange(ext1.shape[0])*ext1_sample_time + t_init_ext1
+        waveform_dict['ext1'] = (t_ext1, ext1)
+
+    return waveform_dict
 
 def read_mrd(ismrmrd_data_fullpath: str) -> tuple[list[ismrmrd.Acquisition], list[ismrmrd.Waveform], ismrmrd.xsd.ismrmrdHeader]:
     '''Reads an ISMRMRD dataset.
