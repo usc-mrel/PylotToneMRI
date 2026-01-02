@@ -13,7 +13,6 @@ dependencies = [
     "matplotlib>=3.10.5",
     "mpl-image-segmenter>=0.2.1",
     "numpy>=2.3.2",
-    "pyarrview",
     "pyfftw>=0.15.0",
     "pyside6>=6.9.1",
     "rtoml>=0.12.0",
