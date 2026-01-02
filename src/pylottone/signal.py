@@ -10,6 +10,7 @@ import scipy as sp
 from numpy.fft import fft, fftn, fftshift, ifft, ifftn, ifftshift
 from scipy.signal.windows import tukey
 from scipy.signal import firwin, convolve
+from scipy.linalg import eigh
 
 
 def cifft(data, axis):
@@ -343,3 +344,117 @@ def xcorr_channels(measurements: np.ndarray, reference_channel: int = 0):
         delays.append(delay)
 
     return np.array(delays), np.array(max_corrs), np.array(pearson_corrs)
+
+def gram_schmidt(A:np.ndarray) -> np.ndarray:
+    ''' Gram-Schmidt orthogonalization of the columns of A. Code adapted from: https://www.sfu.ca/~jtmulhol/py4math/linalg/np-gramschmidt/
+    
+    Parameters
+    ----------
+    A : np.ndarray 
+    A set of linearly independent vectors stored as the columns of matrix A
+    
+    Returns
+    -------
+    Aorth: np.ndarray
+    An orthongonal basis for the column space of A.
+    '''
+    # get the number of vectors.
+    A = np.copy(A).astype(np.float64) # create a local instance of the array
+    n = A.shape[1]
+    for j in range(n):
+        # For the vector in column j, find the perpendicular
+        # of the projection onto the previous orthogonal vectors.
+        for k in range(j):
+            A[:, j] -= np.dot(A[:, k], A[:, j]) * A[:, k]
+        # If original vectors aren't lin indep then we can check for this:
+        #
+        if np.isclose(np.linalg.norm(A[:, j]), 0, rtol=1e-15, atol=1e-14, equal_nan=False):
+            A[:, j] = np.zeros(A.shape[0])
+        else:    
+            A[:, j] = A[:, j] / np.linalg.norm(A[:, j])
+    return A
+
+def calc_gevd(signal: np.ndarray, interference: np.ndarray, ortho: bool = False) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Calculate the virtual coils using GEVD from the signal and interference data.
+    
+    Parameters
+    ----------
+    signal : np.ndarray
+        (n_s x n_ch) flattened signal data.
+    interference : np.ndarray
+        (n_int x n_ch) flattened interference data.
+    ortho : bool, optional
+        Whether to orthogonalize the GEVD eigenvectors using Gram-Schmidt. Default is False.
+        
+    Returns
+    -------
+    Vgevd : np.ndarray
+        (n_ch x n_ch) matrix of GEVD eigenvectors.
+    SIR : np.ndarray
+        Signal-to-Interference Ratio for each channel.
+    SNR : np.ndarray
+        Signal-to-Noise Ratio for each channel.
+    """
+    
+    # Calculate A and B matrices
+    A = signal.conj().T@signal
+    B = interference.conj().T@interference
+
+    # Solve for generalized eigenvalues
+    D, V = eigh(A, B)
+
+    idx = np.argsort(D)[::-1]  # Sort eigenvalues in descending order
+    Vgevd = V[:, idx]  # Sort eigenvectors accordingly
+    if ortho:
+        Vgevd = gram_schmidt(Vgevd)
+    else:
+        Vgevd /= np.linalg.vector_norm(Vgevd, axis=0, keepdims=True, ord=2)  # Normalize eigenvectors
+
+    # Calculate SNR and SIR
+    nc = Vgevd.shape[1]
+    SNR = np.zeros(nc)
+    SIR = np.zeros(nc)
+    for c_i in range(nc):
+        W = Vgevd[:, c_i]
+        SNR[c_i] = abs((W.conj().T @ A @ W) / (W.conj().T @ W))
+        SIR[c_i] = abs((W.conj().T @ A @ W) / (W.conj().T @ B @ W))
+    
+    return Vgevd, SIR, SNR
+
+def calc_rovir(im: np.ndarray, signal_mask: np.ndarray, interference_mask: np.ndarray, ortho: bool = False) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Calculate the ROVIR coils from the image and masks.
+    
+    Parameters
+    ----------
+    im : np.ndarray
+        (n_s x n_ch) flattened image data.
+    signal_mask : np.ndarray
+        (n_s x 1) Mask for the signal.
+    interference_mask : np.ndarray
+        (n_s x 1) Mask for the interference.
+    ortho : bool, optional
+        Whether to orthogonalize the ROVIR eigenvectors using Gram-Schmidt. Default is False.
+        
+    Returns
+    -------
+    Vrvr : np.ndarray
+        (n_ch x n_ch) matrix of ROVIR eigenvectors.
+    im_rvr : np.ndarray
+        (n_s x n_ch) matrix of the image transformed to the ROVIR basis.
+    SIR : np.ndarray
+        Signal-to-Interference Ratio for each channel.
+    SNR : np.ndarray
+        Signal-to-Noise Ratio for each channel.
+    """
+    
+    im_signal = im[signal_mask, :]
+    im_interference = im[interference_mask, :]
+
+    Vrvr, SIR, SNR = calc_gevd(im_signal, im_interference, ortho=ortho)
+
+    # Transform PT to the new basis
+    im_rvr = im @ Vrvr
+    
+    return Vrvr, im_rvr, SIR, SNR
