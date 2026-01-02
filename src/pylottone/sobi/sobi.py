@@ -27,7 +27,8 @@ def prewhiten(X):
 
     # Compute SVD
     U,s,V = np.linalg.svd(Xw, full_matrices=False)
-    Sinv = np.linalg.pinv(np.diag(s))
+    s = s/np.sqrt(X.shape[1]-1)
+    Sinv = np.diag(1/s)
 
     # Find principal components
     Q  = np.dot(Sinv, U.T)
@@ -158,7 +159,7 @@ def find_givens_rotation(A):
 
     return R
 
-def sobi(X, num_lags=None, eps=1.0e-6, random_order = True):
+def sobi(X, num_lags=None, eps=1.0e-6, random_order=True):
 
     """blind source separation technique using SOBI algorithm
 
@@ -200,12 +201,12 @@ def sobi(X, num_lags=None, eps=1.0e-6, random_order = True):
 
     R = time_lagged_cov(Xw, num_lags)
 
-    V = jd(R*1.0, eps=eps)
-
+    V = jd(R*1.0, eps=eps, random_order=random_order)
+    
     W = (V.T).dot(Q)
     A = np.linalg.pinv(W)
     S = W.dot(X)
-
+    
     return S, A, W
 
 
