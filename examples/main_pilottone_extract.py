@@ -14,7 +14,6 @@ from scipy.signal import savgol_filter
 
 import pylottone as pt
 import pylottone.mrdhelper as mrdhelper
-from pylottone import extract_raw_pt
 from pylottone.constants import PILOTTONE_WAVEFORM_ID
 from pylottone.editer import autopick_sensing_coils
 from pylottone.reconstruction.coils import (
@@ -22,6 +21,7 @@ from pylottone.reconstruction.coils import (
     calculate_prewhitening,
 )
 from pylottone.selectionui import get_multiple_filepaths
+from pylottone.signal import angle_dependant_filtering
 from pylottone.trajectory import remove_readout_os
 from pylottone.triggering import extract_triggers, pt_ecg_jitter
 
@@ -106,7 +106,11 @@ def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
 
     f_diff = f0 - f_pt
 
-    pt_raw, ksp_ptsubbed = extract_raw_pt(ksp_measured, kx, ky, n_unique_angles, acq_list[0], f_diff, df, dt, method='wPCA', freq_correction=True, return_complex=False)
+    pt_raw, ksp_ptsubbed = pt.extract_raw_pt(ksp_measured, kx, ky, n_unique_angles, acq_list[0], f_diff, df, dt, method='wPCA', freq_correction=True, return_complex=True)
+
+    pt_sig = np.abs(pt_raw)
+    pt_sig = np.squeeze(pt_sig - np.mean(pt_sig, axis=1, keepdims=True))
+    pt_sig = angle_dependant_filtering(pt_sig, n_unique_angles)
 
     # %% [markdown]
     # ## QA and ECG PT Jitter
@@ -141,7 +145,7 @@ def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
 
     sg_filter_len = 81
 
-    pt_respiratory, pt_cardiac = pt.extract_pilottone_navs(pt_raw, f_samp, pt_extract_params)
+    pt_respiratory, pt_cardiac = pt.extract_pilottone_navs(pt_sig, f_samp, pt_extract_params)
     
     # %% Save the waveforms separately if requested
 
@@ -190,7 +194,6 @@ def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
         plt.show()
 
 
-
     # %% [markdown]
     # ## Save the waveforms into the original data
     if cfg['saving']['save_pt_waveforms']:
@@ -215,26 +218,25 @@ def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
 
     if cfg['saving']['save_model_subtracted']:
 
-        # Read the noise data in
-        print(f'Reading {ismrmrd_noise_fullpath}...')
-        with ismrmrd.Dataset(ismrmrd_noise_fullpath) as dset_noise:
-            n_cal_acq = dset_noise.number_of_acquisitions()
-            print(f'There are {n_cal_acq} acquisitions in the file. Reading...')
-
-            cal_list = []
-            for ii in range(n_cal_acq):
-                cal_list.append(dset_noise.read_acquisition(ii))
-
-        noise_list = []
-
-        for cal_ in cal_list:
-            if cal_.is_flag_set(ismrmrd.ACQ_IS_NOISE_MEASUREMENT):
-                noise_list.append(cal_.data)
-
-        noise = np.transpose(np.asarray(noise_list), (1,0,2)).reshape((noise_list[0].shape[0], -1))[mri_coils,:]
-
         if cfg['pilottone']['prewhiten']:
 
+            # Read the noise data in
+            print(f'Reading {ismrmrd_noise_fullpath}...')
+            with ismrmrd.Dataset(ismrmrd_noise_fullpath) as dset_noise:
+                n_cal_acq = dset_noise.number_of_acquisitions()
+                print(f'There are {n_cal_acq} acquisitions in the file. Reading...')
+
+                cal_list = []
+                for ii in range(n_cal_acq):
+                    cal_list.append(dset_noise.read_acquisition(ii))
+
+            noise_list = []
+
+            for cal_ in cal_list:
+                if cal_.is_flag_set(ismrmrd.ACQ_IS_NOISE_MEASUREMENT):
+                    noise_list.append(cal_.data)
+
+            noise = np.transpose(np.asarray(noise_list), (1,0,2)).reshape((noise_list[0].shape[0], -1))[mri_coils,:]
             print('Prewhitening the raw data...')
             dmtx = calculate_prewhitening(noise)
 
@@ -245,11 +247,8 @@ def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
             ksp_ptsubbed = ksp_ptsubbed[:,:,mri_coils2]
             mri_coils = mri_coils[mri_coils2]
             
-        n_samp = ksp_ptsubbed.shape[0]
-
         if remove_os:
             ksp_ptsubbed = remove_readout_os(ksp_ptsubbed)
-            n_samp = n_samp // 2
 
         output_dir_fullpath = os.path.join(data_dir, 'raw', 'h5_proc')
         output_data_fullpath = os.path.join(output_dir_fullpath, f"{ismrmrd_data_fullpath.split('/')[-1][:-3]}_mdlsub.h5")
