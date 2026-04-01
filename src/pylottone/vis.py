@@ -536,7 +536,11 @@ def draw_coils(axs, coil_name, colors, info=None, all_coils=None):
     axs.axis('off')
 
 
-def plot_rawpt(pt_raw: np.ndarray, coil_name: np.ndarray, time_pt: np.ndarray, sort: bool=True, drawcoils: bool = True) -> Tuple[plt.Figure, np.ndarray]:
+def plot_rawpt(pt_raw: np.ndarray, time_pt: np.ndarray, coil_name: np.ndarray | None = None, sort: bool=False, drawcoils: bool = False, title: str | None = None) -> Tuple[plt.Figure, np.ndarray]:
+    if coil_name is None:
+        coil_name = np.array([f'Ch {i}' for i in range(pt_raw.shape[1])])
+    else:
+        coil_name = np.asarray(coil_name)
     if sort:
         Isort = np.argsort(coil_name)
     else:
@@ -561,11 +565,19 @@ def plot_rawpt(pt_raw: np.ndarray, coil_name: np.ndarray, time_pt: np.ndarray, s
     default_colors = [line.get_color() for line in lines]
     if drawcoils:
         draw_coils(axs[1], (coil_name)[Isort], default_colors)
-    plt.suptitle('Raw Pilot Tones and coil positions', fontsize=16)
+
+    if title is not None:
+        plt.suptitle(title, fontsize=16)
+
     plt.tight_layout()
     return f, axs
 
-def plot_rawpt_compare(pt_raw: np.ndarray, pt_raw2: np.ndarray, coil_name: np.ndarray, time_pt: np.ndarray, sort: bool=True):
+def plot_rawpt_compare(pt_raw: np.ndarray, pt_raw2: np.ndarray, time_pt: np.ndarray, coil_name: np.ndarray | None = None, sort: bool=False, title: str | None = None):
+    
+    if coil_name is None:
+        coil_name = np.array([f'Ch {i}' for i in range(pt_raw.shape[1])])
+    else:
+        coil_name = np.asarray(coil_name)
     if sort:
         Isort = np.argsort(coil_name)
     else:
@@ -598,6 +610,8 @@ def plot_rawpt_compare(pt_raw: np.ndarray, pt_raw2: np.ndarray, coil_name: np.nd
     axs[0].sharey(axs[1])
     axs[0].sharex(axs[1])
 
-    plt.suptitle('Raw Pilot Tones and coil positions', fontsize=16)
+    if title is not None:
+        plt.suptitle(title, fontsize=16)
+
     plt.tight_layout()
     return f, axs

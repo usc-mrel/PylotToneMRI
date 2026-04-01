@@ -585,7 +585,7 @@ def pick_cardiac_source(latent_vectors: np.ndarray, f_samp: float, fmask_low: fl
 
     n_pt_samp = latent_vectors.shape[0]
     df = f_samp/n_pt_samp
-    faxis = np.arange(0, f_samp, df) - (f_samp - (n_pt_samp % 2)*df)/2
+    faxis = np.linspace(0, f_samp, n_pt_samp) - (f_samp - (n_pt_samp % 2)*df)/2
     f_mask = (faxis > fmask_low) & (faxis < fmask_high) # By default, assumes between 40 bpm to 180 bpm
     ptc_freq_max = np.max(np.abs(cfftn(latent_vectors, axes=(0,))[f_mask,:]), axis=0)
     picked_by_spec = ptc_freq_max > np.max(ptc_freq_max)*0.9
@@ -613,7 +613,7 @@ def pick_source_bypeak(latent_vectors: np.ndarray, f_samp: float, fmask_low: flo
     
     n_pt_samp = latent_vectors.shape[0]
     df = f_samp/n_pt_samp
-    faxis = np.arange(0, f_samp, df) - (f_samp - (n_pt_samp % 2)*df)/2
+    faxis = np.linspace(0, f_samp, n_pt_samp) - (f_samp - (n_pt_samp % 2)*df)/2
     f_mask = (faxis > fmask_low) & (faxis < fmask_high) # By default, assumes between 40 bpm to 180 bpm
     ptc_freq_max = np.max(np.abs(cfftn(latent_vectors, axes=(0,))[f_mask,:]), axis=0)
     picked_by_spec = ptc_freq_max > np.max(ptc_freq_max)*threshold

@@ -1,5 +1,4 @@
 import copy
-import wave
 from pylottone.constants import ECG_WAVEFORM_ID, PULSEOX_WAVEFORM_ID, PILOTTONE_WAVEFORM_ID, PILOTTONE_CH, EXT1_WAVEFORM_ID, RESPPT_WAVEFORM_ID
 import ismrmrd
 import numpy as np
@@ -181,6 +180,7 @@ def waveforms_asarray2(wf_list: list[ismrmrd.Waveform]) -> dict:
     ecg = []
     resp_pt = []
     ext1 = []
+    t_ext1 = []
     pulseox = []
     t_init_pox = 0
     pulseox_sample_time = 0
@@ -212,6 +212,7 @@ def waveforms_asarray2(wf_list: list[ismrmrd.Waveform]) -> dict:
             if t_init_ext1 == 0:
                 t_init_ext1 = wf.time_stamp*2.5e-3
                 ext1_sample_time = wf.sample_time_us*1e-6
+            t_ext1.extend(wf.time_stamp*2.5e-3 + np.arange(wf.data.shape[1])*ext1_sample_time)
 
     waveform_dict = {}
     ecg = np.concatenate(ecg, axis=1).T if len(ecg) > 0 else np.array([])
@@ -227,7 +228,8 @@ def waveforms_asarray2(wf_list: list[ismrmrd.Waveform]) -> dict:
 
     pulseox = np.concatenate(pulseox, axis=1).T if len(pulseox) > 0 else np.array([])
     if len(pulseox) > 0:
-        if not np.isnan(pulseox).all() and not np.all(pulseox[:,1]):
+        is_flat = np.all(pulseox[:, 0] == pulseox[0, 0], axis=0) # Check if the waveform is flat
+        if not np.isnan(pulseox).all() and not is_flat and not np.all(pulseox[:,1]):
             pulseox_trigs = pulseox[:, 1].astype(np.int32)
             pulseox_trigs[pulseox_trigs > 0] = 1
             pulseox = pulseox[:, 0].astype(np.float32)
@@ -248,7 +250,8 @@ def waveforms_asarray2(wf_list: list[ismrmrd.Waveform]) -> dict:
     if len(ext1) > 0:
         ext1 = ext1[:, 1].astype(np.float32)
         ext1[ext1 > 0] = 1
-        t_ext1 = np.arange(ext1.shape[0])*ext1_sample_time + t_init_ext1
+        # t_ext1 = np.arange(ext1.shape[0])*ext1_sample_time + t_init_ext1
+        t_ext1 = np.array(t_ext1)
         waveform_dict['ext1'] = (t_ext1, ext1)
 
     return waveform_dict
