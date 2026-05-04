@@ -536,7 +536,7 @@ def draw_coils(axs, coil_name, colors, info=None, all_coils=None):
     axs.axis('off')
 
 
-def plot_rawpt(pt_raw: np.ndarray, time_pt: np.ndarray, coil_name: np.ndarray | None = None, sort: bool=False, drawcoils: bool = False, title: str | None = None) -> Tuple[plt.Figure, np.ndarray]:
+def plot_rawpt(pt_raw: np.ndarray, time_pt: np.ndarray, coil_name: np.ndarray | list[str] | None = None, sort: bool=False, drawcoils: bool = False, title: str | None = None) -> Tuple[plt.Figure, np.ndarray]:
     if coil_name is None:
         coil_name = np.array([f'Ch {i}' for i in range(pt_raw.shape[1])])
     else:
@@ -572,7 +572,7 @@ def plot_rawpt(pt_raw: np.ndarray, time_pt: np.ndarray, coil_name: np.ndarray | 
     plt.tight_layout()
     return f, axs
 
-def plot_rawpt_compare(pt_raw: np.ndarray, pt_raw2: np.ndarray, time_pt: np.ndarray, coil_name: np.ndarray | None = None, sort: bool=False, title: str | None = None):
+def plot_rawpt_compare(pt_raw: np.ndarray, pt_raw2: np.ndarray, time_pt: np.ndarray, coil_name: np.ndarray | list[str] | None = None, sort: bool=False, title: str | None = None):
     
     if coil_name is None:
         coil_name = np.array([f'Ch {i}' for i in range(pt_raw.shape[1])])

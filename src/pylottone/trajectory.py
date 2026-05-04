@@ -8,16 +8,16 @@ def calc_fovshift_phase(kx: npt.NDArray, ky: npt.NDArray, acq: ismrmrd.Acquisiti
 
     Parameters:
     ----------
-    kx (np.ndarray): 
+    kx (np.ndarray):
         1D array of k-space points in the logical x coordinates.
-    ky (np.ndarray): 
+    ky (np.ndarray):
         2D array of k-space points in the logical y coordinates.
-    acq (ismrmrd.Acquisition): 
+    acq (ismrmrd.Acquisition):
         Acquisition object containing the phase and read directions, and position.
 
     Returns:
     ----------
-    np.ndarray: 
+    np.ndarray:
         1D array of phase demodulation values in the GCS.
     '''
 
@@ -32,8 +32,8 @@ def calc_fovshift_phase(kx: npt.NDArray, ky: npt.NDArray, acq: ismrmrd.Acquisiti
                             [1,    0,   0],  # [RO] = [1 0 0] * [c]
                             [0,    0,   1]]) # [SL]   [0 0 1] * [s]
 
-    r_GCS2PCS = np.array([np.array(acq.phase_dir), 
-                        np.array(acq.read_dir), 
+    r_GCS2PCS = np.array([np.array(acq.phase_dir),
+                        np.array(acq.read_dir),
                         np.array(acq.slice_dir)])
     PCS_offset = np.array([1, 1, 1])*np.array(acq.position)*1e-3
     GCS_offset = r_GCS2PCS.dot(PCS_offset)
@@ -43,9 +43,51 @@ def calc_fovshift_phase(kx: npt.NDArray, ky: npt.NDArray, acq: ismrmrd.Acquisiti
 
     return phase_mod_rads.astype(np.complex64)
 
+
+def calc_cartesian_fovshift_phase(fov: float, dt: float, acq: ismrmrd.Acquisition) -> npt.NDArray[np.complex64]:
+    '''Calculate the phase demodulation due to the FOV shift in the GCS for Cartesian trajectory.
+
+    Parameters:
+    ----------
+    fov (float):
+        Field of view in the readout direction [m].
+    dt (float):
+        Acquisition dwell time [s].
+    acq (ismrmrd.Acquisition):
+        Acquisition object containing the phase and read directions, and position.
+
+    Returns:
+    ----------
+    np.ndarray:
+        1D array of phase demodulation values in the GCS.
+    '''
+
+    n_samp = acq.number_of_samples
+    rotMatrixGCSToRCS = np.array([[0,    1,    0],
+                                    [1,    0,    0],
+                                    [0,    0,    1]])
+    # Demod cartesian data
+    phase_dir = acq.phase_dir[:]
+    read_dir  = -np.array(acq.read_dir[:])
+    slice_dir = acq.slice_dir[:]
+    rotMatrixGCSToPCS = np.vstack((phase_dir, read_dir, slice_dir))
+
+    sag_offset = acq.position[0] # [mm]
+    cor_offset = acq.position[1] # [mm]
+    tra_offset = acq.position[2] # [mm]
+    PCS_offset = np.vstack((sag_offset, cor_offset, tra_offset)) * 1e-3 # [mm] * [m/1e3mm] => [m]
+    GCS_offset = rotMatrixGCSToPCS.T@PCS_offset
+    RCS_offset = rotMatrixGCSToRCS@GCS_offset
+
+    fshift = RCS_offset[0,0]/(fov*dt)
+    phase_mod_rads = np.exp(-2j*np.pi*np.arange(n_samp)*dt*fshift).T
+    phase_mod_rads = phase_mod_rads[:, None, None]
+
+    return phase_mod_rads.astype(np.complex64)
+
 def remove_readout_os(ksp_ptsubbed: npt.NDArray[np.complex64]) -> npt.NDArray[np.complex64]:
     '''Remove 2x readout oversampling from the k-space data.'''
-    
+
     n_samp = ksp_ptsubbed.shape[0]
     ksp_ptsubbed = pyfftw.byte_align(ksp_ptsubbed)
 
