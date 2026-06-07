@@ -7,6 +7,10 @@ import fnmatch
 import warnings
 import time
 import re
+import logging
+from scipy.io import loadmat
+
+logging.basicConfig(level=logging.INFO)
 
 def siemens_mrd_finder(data_root: str, data_folder: str, raw_file: str, h5folderext: str = '', rawfile_ext: str = '') -> str:
     """
@@ -428,3 +432,25 @@ def save_processed_raw_data(output_data_fullpath: str,
             new_dset.append_waveform(pt_wf)
 
         new_dset.write_xml_header(ismrmrd.xsd.ToXML(new_hdr))
+
+def load_trajectory(metadata, metafile_paths: list[str]) -> dict | None:
+    # get the k-space trajectory based on the metadata hash.
+    for str_param in metadata.userParameters.userParameterString:
+        if str_param.name == "tSequenceVariant":
+            traj_name = str_param.value[:32] # Get first 32 chars, because a bug sometimes causes this field to have /OSP added to the end.
+            break
+    else:
+        logging.error("Sequence hash is not found in metadata user parameters.")
+        return None
+
+    # load the .mat file containing the trajectory
+    # Search for the file in the metafile_paths
+    for path in metafile_paths:
+        metafile_fullpath = os.path.join(path, traj_name + ".mat")
+        if os.path.isfile(metafile_fullpath):
+            logging.info(f"Loading metafile {traj_name} from {path}...")
+            traj = loadmat(metafile_fullpath, squeeze_me=True)
+            return traj
+    else:
+        logging.error(f"Trajectory file {traj_name}.mat not found in specified paths.")
+        return None

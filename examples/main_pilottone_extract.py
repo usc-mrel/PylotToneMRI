@@ -9,7 +9,6 @@ import ismrmrd
 import matplotlib.pyplot as plt
 import numpy as np
 import rtoml
-from scipy.io import loadmat
 from scipy.signal import savgol_filter
 
 import pylottone as pt
@@ -24,6 +23,11 @@ from pylottone.selectionui import get_multiple_filepaths
 from pylottone.signal import angle_dependant_filtering
 from pylottone.trajectory import remove_readout_os
 from pylottone.triggering import extract_triggers, pt_ecg_jitter
+
+# TODO: 
+# 1. Switch to new extraction method.
+# 2. Decouple UI and CUDA functionality of the package to make them optional deps.
+
 
 # %%
 # Read the data in
@@ -42,10 +46,7 @@ def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
     n_acq = len(acq_list)
 
     # get the k-space trajectory based on the metadata hash.
-    traj_name = hdr.userParameters.userParameterString[1].value
-
-    # load the .mat file containing the trajectory
-    traj = loadmat(os.path.join(data_dir, traj_name), squeeze_me=True)
+    traj = mrdhelper.load_trajectory(hdr, [data_dir])
 
     n_unique_angles = int(traj['param']['repetitions'])
     pre_discard = int(traj['param']['pre_discard'])
@@ -86,17 +87,32 @@ def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
     # ksp_sniffer  = data[:,:,sensing_coils]
 
     ## Process ECG waveform
-    ecg, _ = mrdhelper.waveforms_asarray(wf_list)
-    if ecg is not None:
-        ecg_waveform = ecg['ecg_waveform']
-        ecg_waveform = pt.check_waveform_polarity(ecg_waveform, 0.5)*ecg_waveform
-        time_ecg = ecg['time_ecg'] - acq_list[0].acquisition_time_stamp*2.5e-3
-        ecg_trigs = ecg['ecg_trigs']
+    wf_dict = mrdhelper.waveforms_asarray2(wf_list)
+    ecg_exists = False
+    if 'ecg' in wf_dict:
+        ecg_waveform = wf_dict['ecg'][1][:,0]
+        ecg_waveform = pt.check_waveform_polarity(ecg_waveform, 0.5, method='width')*ecg_waveform
+        time_ecg = wf_dict['ecg'][0] - acq_list[0].acquisition_time_stamp*2.5e-3
+        ecg_trigs = wf_dict['ecg'][1][:, -1]
+        ecg_exists = True
     else:
-        print('No ECG waveform found, skipping the validation part.')
-    # plt.figure()
-    # plt.plot(time_ecg, ecg_waveform)
-    # plt.plot(time_ecg[ecg_trigs==1], ecg_waveform[ecg_trigs==1], '*')
+        print('No ECG waveform found.')
+    if 'pulseox' in wf_dict:
+        time_pulseox = wf_dict['pulseox'][0] - acq_list[0].acquisition_time_stamp*2.5e-3
+        pulseox_waveform = wf_dict['pulseox'][1]
+        pulseox_trigs = wf_dict['pulseox'][2]
+    else:
+        print('No Pulse Oximeter waveform found.')
+    if 'ext1' in wf_dict:
+        time_ext1 = wf_dict['ext1'][0] - acq_list[0].acquisition_time_stamp*2.5e-3
+        ext1_trigs = wf_dict['ext1'][1]
+    else:
+        print('No external trigger waveform found.')
+    if 'resp' in wf_dict:
+        time_resp = wf_dict['resp'][0] - acq_list[0].acquisition_time_stamp*2.5e-3
+        resp_waveform = wf_dict['resp'][1]
+    else:
+        print('No respiratory waveform found.')
 
 
     # %% [markdown]
@@ -110,7 +126,7 @@ def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
 
     pt_sig = np.abs(pt_raw)
     pt_sig = np.squeeze(pt_sig - np.mean(pt_sig, axis=1, keepdims=True))
-    pt_sig = angle_dependant_filtering(pt_sig, n_unique_angles)
+    # pt_sig = angle_dependant_filtering(pt_sig, n_unique_angles)
 
     # %% [markdown]
     # ## QA and ECG PT Jitter
@@ -173,12 +189,12 @@ def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
     pt_cardiac_trigs = extract_triggers(time_pt, pt_cardiac, skip_time=1, prominence=0.4, max_hr=160)
     pt_derivative_trigs = extract_triggers(time_pt, pt_cardiac_derivative, skip_time=1, prominence=0.5, max_hr=160)
 
-    if ecg is not None:
+    if ecg_exists:
         _,_ = pt_ecg_jitter(time_pt, pt_cardiac, pt_cardiac_derivative,
                             time_ecg, ecg_waveform, 
                             pt_cardiac_trigs=pt_cardiac_trigs, pt_derivative_trigs=pt_derivative_trigs, ecg_trigs=ecg_trigs, 
                             skip_time=1, show_outputs=cfg['pilottone']['show_outputs'])
-    elif ecg is None and cfg['pilottone']['show_outputs']:
+    elif cfg['pilottone']['show_outputs']:
         fig, axs = plt.subplots(2,1, figsize=(10, 6), sharex=True)
         axs[0].plot(time_pt, pt_cardiac, label='Cardiac')
         axs[0].plot(time_pt, pt_cardiac_derivative, label='Cardiac Derivative')
