@@ -8,7 +8,7 @@ from pathlib import Path
 
 import ismrmrd
 import numpy as np
-import rtoml
+import tomllib
 from scipy.io import loadmat
 from scipy.signal.windows import tukey
 from scipy.sparse.linalg import svds
@@ -245,8 +245,8 @@ if __name__ == '__main__':
 
     args = argparser.parse_args()
     
-    with open(args.config, 'r') as cf:
-        cfg = rtoml.load(cf)
+    with open(args.config, 'rb') as cf:
+        cfg = tomllib.load(cf)
 
     if args.filepaths:
         filepaths = args.filepaths

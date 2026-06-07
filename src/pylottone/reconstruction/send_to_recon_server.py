@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 from types import SimpleNamespace
 
-import rtoml
+import tomllib
 
 from pylottone.reconstruction import client
 from pylottone.selectionui import get_multiple_filepaths
@@ -94,8 +94,8 @@ def main_cli():
 
     args = argparser.parse_args()
 
-    with open(args.config, 'r') as cf:
-        cfg = rtoml.load(cf)
+    with open(args.config, 'rb') as cf:
+        cfg = tomllib.load(cf)
     
     if args.filepaths:
         filepaths = args.filepaths

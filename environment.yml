@@ -4,7 +4,7 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - python=3.10.13
+  - python=3.12
   - ismrmrd::ismrmrd-python=1.14.1
   - ismrmrd::siemens_to_ismrmrd=1.2.12
   - boost=1.80.0         # For ismrmrd
@@ -18,6 +18,5 @@ dependencies:
   - pandas
   - pyfftw
   - hyperspy
-  - rtoml
   - pip
   - cupy # For GPU acceleration at EDITER processing.

@@ -29,7 +29,7 @@ It can be directly installed from GitHub via `pip`:
 pip install git+https://github.com/usc-mrel/PylotToneMRI
 ```
 
-**Note:** Toolbox is only tested for Python>=3.10 and Python<=3.12.
+**Note:** Toolbox is only tested for Python>=3.11 and Python<=3.12.
 
 # Usage
 

@@ -1,6 +1,6 @@
 # %%
 import ismrmrd
-import rtoml
+import tomllib
 import os
 from scipy.io import loadmat
 from scipy.signal.windows import tukey
@@ -13,8 +13,8 @@ from pylottone.trajectory import remove_readout_os
 
 
 # Read config
-with open('config.toml', 'r') as cf:
-    cfg = rtoml.load(cf)
+with open('config.toml', 'rb') as cf:
+    cfg = tomllib.load(cf)
 
 DATA_ROOT = cfg['DATA_ROOT']
 DATA_DIR = cfg['data_folder']

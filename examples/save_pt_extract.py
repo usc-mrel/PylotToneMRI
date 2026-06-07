@@ -5,7 +5,7 @@ import os
 from typing import Union
 
 import numpy as np
-import rtoml
+import tomllib
 from scipy.io import loadmat
 
 import pylottone as pt
@@ -273,8 +273,8 @@ if __name__ == '__main__':
 
     args = argparser.parse_args()
 
-    with open(args.config, 'r') as cf:
-        cfg = rtoml.load(cf)
+    with open(args.config, 'rb') as cf:
+        cfg = tomllib.load(cf)
 
     if args.filepaths:
         filepaths = args.filepaths

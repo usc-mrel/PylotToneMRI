@@ -6,7 +6,7 @@ It will use the config.toml for the configuration.
 import argparse
 import os
 
-import rtoml
+import tomllib
 
 import main_editer_correct
 import main_pilottone_extract
@@ -20,8 +20,8 @@ argparser.add_argument('-c', '--config', nargs='?', default='config.toml', help=
 
 args = argparser.parse_args()
 
-with open(args.config, 'r') as cf:
-    cfg = rtoml.load(cf)
+with open(args.config, 'rb') as cf:
+    cfg = tomllib.load(cf)
 
 if args.filepaths:
     filepaths = args.filepaths

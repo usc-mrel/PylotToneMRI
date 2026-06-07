@@ -6,7 +6,7 @@ readme = "README.md"
 authors = [
     { name = "Bilal Tasdelen", email = "tasdelen@usc.edu" }
 ]
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 dependencies = [
     "cupy-cuda12x>=13.6.0",
     "ismrmrd>=1.14.1",
@@ -15,7 +15,6 @@ dependencies = [
     "numpy>=2.3.2",
     "pyfftw>=0.15.0",
     "pyside6>=6.9.1",
-    "rtoml>=0.12.0",
 ]
 
 [project.scripts]

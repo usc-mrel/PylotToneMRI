@@ -7,7 +7,6 @@ ipympl
 pandas
 pyfftw
 hyperspy
-rtoml
 pip
 mpl-interactions # For custom ROI in noise_graph_from_series.ipynb
 mpl-image-segmenter
