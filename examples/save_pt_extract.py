@@ -239,10 +239,9 @@ def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
 
     _, _,pt_respiratory, Vcard, accept_list_cardiac, pt_cardiac = pt.calibrate_pt(pt_sig, f_samp, pt_extract_params)
 
-    # S = (np.linalg.inv(Vcard)[:,0][:,None]@pt_cardiac[None,:]).T
-
-
     print('Saving waveforms...')
+    os.makedirs(os.path.join(cfg['DATA_ROOT'], "waveforms/", cfg['data_folder']),exist_ok=True)
+
     np.savez(os.path.join(cfg['DATA_ROOT'], "waveforms/", cfg['data_folder'], f"{ismrmrd_data_fullpath.split('/')[-1][:-3]}_ptwaveforms_{f_pt/1e6}MHz.npz"),
                 pt_raw=pt_raw,
                 pt_respiratory=pt_respiratory,
