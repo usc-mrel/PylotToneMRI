@@ -1,9 +1,15 @@
 import ismrmrd
 import h5py
 import numpy as np
-from pylottone.selectionui import get_selection
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
+
+try:
+    from pylottone.selectionui import get_selection
+except ImportError:
+    raise ImportError(
+        "UI dependencies not installed. Install with: pip install pylottone[ui]"
+    )
 
 filepath = 'output_recons/vol0912_20240626/viewsharing_meas_MID00285_FID16394_pulseq2D_fire_spiralga_100mV_24MHz_mdlsub.mrd'
 

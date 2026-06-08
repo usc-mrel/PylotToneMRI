@@ -14,8 +14,10 @@ dependencies = [
     "mpl-image-segmenter>=0.2.1",
     "numpy>=2.3.2",
     "pyfftw>=0.15.0",
-    "pyside6>=6.9.1",
 ]
+
+[project.optional-dependencies]
+ui = ["pyside6>=6.9.1"]
 
 [project.scripts]
 send_to_recon_server = "pylottone.reconstruction.send_to_recon_server:main_cli"

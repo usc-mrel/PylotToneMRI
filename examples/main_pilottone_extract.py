@@ -19,7 +19,11 @@ from pylottone.reconstruction.coils import (
     apply_prewhitening,
     calculate_prewhitening,
 )
-from pylottone.selectionui import get_multiple_filepaths
+
+try:
+    from pylottone.selectionui import get_multiple_filepaths
+except ImportError:
+    get_multiple_filepaths = None
 from pylottone.signal import angle_dependant_filtering
 from pylottone.trajectory import remove_readout_os
 from pylottone.triggering import extract_triggers, pt_ecg_jitter
@@ -294,6 +298,11 @@ if __name__ == '__main__':
         print(filepaths)
     else:
         # Get filepaths if not provided
+        if get_multiple_filepaths is None:
+            raise ImportError(
+                "UI dependencies not installed. Either provide filepaths with -f/--filepaths \n"
+                "or install with: pip install pylottone[ui]"
+            )
         filepaths = get_multiple_filepaths(dir=os.path.join(cfg['DATA_ROOT'], cfg['data_folder'], 'raw'))
 
     for ismrmrd_data_fullpath in filepaths:

@@ -1,7 +1,7 @@
 ismrmrd
 matplotlib     # used by rgb.py and provides various visualization tools including colormaps
 numpy
-pyside6       # For UI in respiratory_from_image.py
+pyside6       # Optional: For UI components (install with: pip install pylottone[ui])
 ipykernel
 ipympl
 pandas

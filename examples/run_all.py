@@ -11,7 +11,11 @@ import tomllib
 import main_editer_correct
 import main_pilottone_extract
 from pylottone.reconstruction import send_to_recon_server
-from pylottone.selectionui import get_multiple_filepaths
+
+try:
+    from pylottone.selectionui import get_multiple_filepaths
+except ImportError:
+    get_multiple_filepaths = None
 
 # Check if filepaths are provided as arguments
 argparser = argparse.ArgumentParser()
@@ -29,6 +33,10 @@ if args.filepaths:
     print(filepaths)
 else:
     # Get filepaths if not provided
+    if get_multiple_filepaths is None:
+        raise ImportError(
+            "UI dependencies not installed. Either provide filepaths with -f or install with: pip install pylottone[ui]"
+        )
     filepaths = get_multiple_filepaths(dir=os.path.join(cfg['DATA_ROOT'], cfg['data_folder'], 'raw'))
 
 for ismrmrd_data_fullpath in filepaths:

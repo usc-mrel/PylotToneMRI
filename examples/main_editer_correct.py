@@ -15,7 +15,11 @@ from scipy.sparse.linalg import svds
 
 import pylottone.mrdhelper as mrdhelper
 from pylottone.editer import apply_editer, autopick_sensing_coils
-from pylottone.selectionui import get_multiple_filepaths
+
+try:
+    from pylottone.selectionui import get_multiple_filepaths
+except ImportError:
+    get_multiple_filepaths = None
 from pylottone.trajectory import remove_readout_os
 
 
@@ -254,6 +258,11 @@ if __name__ == '__main__':
         print(filepaths)
     else:
         # Get filepaths if not provided
+        if get_multiple_filepaths is None:
+            raise ImportError(
+                "UI dependencies not installed. Either provide filepaths with -f/--filepaths \n"
+                "or install with: pip install pylottone[ui]"
+            )
         filepaths = get_multiple_filepaths(dir=os.path.join(cfg['DATA_ROOT'], cfg['data_folder'], 'raw'))
 
     for ismrmrd_data_fullpath in filepaths:

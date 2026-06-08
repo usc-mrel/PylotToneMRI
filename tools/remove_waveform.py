@@ -7,8 +7,13 @@ import h5py
 import numpy as np
 import subprocess
 import argparse
-from pylottone.selectionui import get_filepath
-from PySide6.QtCore import QDir
+
+try:
+    from pylottone.selectionui import get_filepath
+except ImportError:
+    raise ImportError(
+        "UI dependencies not installed. Install with: pip install pylottone[ui]"
+    )
 
 parser = argparse.ArgumentParser(description='Remove waveform by its ID from an ISMRMRD dataset. Especially useful when we want to replace custom waveforms.')
 parser.add_argument('waveform_id', nargs='?', help='Waveform ID. Default is 1025.', default=1025, type=int)
@@ -17,7 +22,7 @@ args = parser.parse_args()
 repack_file = args.repack
 waveform_id = args.waveform_id
 
-ismrmrd_data_fullpath = get_filepath(dir=QDir.homePath())
+ismrmrd_data_fullpath = get_filepath(dir=os.path.expanduser('~'))
 print(f'File selected: {ismrmrd_data_fullpath}')
 raw_file_ = os.path.basename(ismrmrd_data_fullpath)
 print(f'Raw file: {raw_file_}')

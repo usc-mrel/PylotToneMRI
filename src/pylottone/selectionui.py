@@ -1,8 +1,15 @@
+import sys
+
 try:
     from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QListWidget, QPushButton, QFileDialog
-except ImportError: # Fallback to PySide2 in case conda is used.
-    from PySide2.QtWidgets import QApplication, QWidget, QVBoxLayout, QListWidget, QPushButton, QFileDialog # type: ignore
-import sys
+except ImportError:
+    try:
+        from PySide2.QtWidgets import QApplication, QWidget, QVBoxLayout, QListWidget, QPushButton, QFileDialog # type: ignore
+    except ImportError:
+        raise ImportError(
+            "PySide6 (or PySide2) is required to use the selection UI. "
+            "Install it with: pip install pylottone[ui]"
+        )
 
 class SelectionWindow(QWidget):
     def __init__(self, selection_list):
