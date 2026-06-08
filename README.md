@@ -22,11 +22,23 @@ Install via `pip` in dev mode:
 ```bash
 pip install -e .
 ```
+
+To enable GPU acceleration for EDITER, install the optional GPU extra:
+
+```bash
+pip install -e '.[gpu]'
+```
 ## For usage as a library:
 
 It can be directly installed from GitHub via `pip`:
 ```bash
 pip install git+https://github.com/usc-mrel/PylotToneMRI
+```
+
+If you want EDITER GPU support from the GitHub install, use:
+
+```bash
+pip install 'pylottone[gpu] @ git+https://github.com/usc-mrel/PylotToneMRI'
 ```
 
 **Note:** Toolbox is only tested for Python>=3.11 and Python<=3.12.

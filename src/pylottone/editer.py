@@ -1,19 +1,37 @@
 from warnings import warn
 import numpy as np
 import numpy.typing as npt
-from numpy.fft import ifft, ifftshift, fft, fftshift
-from typing import Union
+from numpy.fft import ifft, ifftshift
 import math
+
+try:
+    import cupy as cp
+except Exception as exc:
+    cp = None
+    _cupy_import_error = exc
+    warn(f'CuPy is unavailable; EDITER will use the CPU path. ({exc!r})')
+
 import scipy as sp
 
-import cupy as cp
-import cupy.typing as cpt
+
+def _cupy_ready() -> bool:
+    return cp is not None
+
+
+def _to_numpy(array):
+    if cp is not None and hasattr(array, 'get'):
+        return array.get()
+    return array
 
 def to_hybrid_kspace(indata):
     '''Centered ifft on first dimension. Does not do fftshift before ifft, as it treats data as time signal.'''
     return ifftshift(ifft(indata, None, axis=0), axes=0)
 
 def autopick_sensing_coils(data, f_emi, bw_emi, bw_sig, f_samp, ratio_th=None, n_sensing=None):
+
+    # Ensure CPU array for operations (Numba or SciPy paths expect numpy arrays)
+    if cp is not None and hasattr(data, '__cuda_array_interface__'):
+        data = _to_numpy(data)
 
     n_samp = data.shape[0]
     df = f_samp/n_samp
@@ -76,7 +94,11 @@ def autopick_sensing_coils(data, f_emi, bw_emi, bw_sig, f_samp, ratio_th=None, n
 
 
 
-def get_noise_mtx(line_grp: Union[npt.NDArray[np.complex64], cpt.NDArray[cp.complex64]], dk: list[int]):
+def get_noise_mtx(
+    line_grp: npt.NDArray[np.complex64],
+    dk: list[int],
+    xp=None,
+):
     """
     Creates the shifted noise matrix for a given line group and kernel sizes.
 
@@ -87,11 +109,15 @@ def get_noise_mtx(line_grp: Union[npt.NDArray[np.complex64], cpt.NDArray[cp.comp
     Returns:
         numpy.ndarray: Noise matrix of shape ((Nsamples * Nlines) x (Nchannels * (d_kx * 2 + 1) * (d_ky * 2 + 1))).
     """
-    xp = cp.get_array_module(line_grp)
+    if xp is None:
+        if cp is not None and hasattr(line_grp, '__cuda_array_interface__'):
+            xp = cp.get_array_module(line_grp)
+        else:
+            xp = np
+    if cp is None and xp is not np:
+        xp = np
     d_kx = dk[0]
     d_ky = dk[1]
-
-    n_ch = line_grp.shape[2]
 
     # noise_mat = np.zeros((line_grp.shape[0], line_grp.shape[1], n_ch*(d_kx*2+1)*(d_ky*2+1)), dtype=line_grp.dtype)
     noise_mat = []
@@ -116,53 +142,40 @@ def get_noise_mtx(line_grp: Union[npt.NDArray[np.complex64], cpt.NDArray[cp.comp
 
     return noise_mat
 
-def est_emi(signal_in: npt.NDArray[np.complex64], sniffer: npt.NDArray[np.complex64], line_grps: list[npt.NDArray], dk: list[int], w: npt.NDArray[np.float32]):
 
+def _est_emi_impl(signal_in, sniffer, line_grps, dk, w, xp, to_numpy):
     Ncol, Nlin, Nc = sniffer.shape
-    emi_hat = np.zeros((Ncol, Nlin), dtype=np.complex64)
-    kern = [] # np.zeros((Nc * (dk[0] * 2 + 1) * (dk[1] * 2 + 1), Ngrp))
+    emi_hat = xp.zeros((Ncol, Nlin), dtype=np.complex64)
+    kern = []
 
     for cwin, pe_rng in enumerate(line_grps):
-        # pe_rng is the range of lines in the current group
-        noise_mat = get_noise_mtx(sniffer[:, pe_rng, :], dk)
+        # Build noise matrix and input vectors in the chosen backend
+        snf = xp.asarray(sniffer[:, pe_rng, :])
+        noise_mat = get_noise_mtx(snf, dk, xp=xp)
 
-        # Select grouped lines and flatten for inversion
-        init_mat_sub = np.reshape(signal_in[:, pe_rng], (Ncol * len(pe_rng), 1))
+        init_mat_sub = xp.reshape(xp.asarray(signal_in[:, pe_rng]), (Ncol * len(pe_rng), 1))
+        ww = xp.reshape(xp.asarray(w[:, pe_rng]), (Ncol * len(pe_rng), 1))
 
-        ww = np.reshape(w[:, pe_rng], (Ncol * len(pe_rng), 1))
+        # Use SciPy's lstsq on CPU for consistency with previous implementation,
+        # and CuPy's lstsq on GPU when available.
+        if xp is np:
+            kern_ ,_,_,_ = sp.linalg.lstsq(ww * noise_mat, ww * init_mat_sub, cond=None, check_finite=False)
+        else:
+            kern_ ,_,_,_ = xp.linalg.lstsq(ww * noise_mat, ww * init_mat_sub, rcond=None)
 
-        # Solving the linear system
-        kern_ ,_,_,_ = sp.linalg.lstsq(ww * noise_mat, ww * init_mat_sub, cond=None, check_finite=False)
+        kern.append((pe_rng, to_numpy(kern_)))
+        emi_hat[:, pe_rng] = xp.reshape(xp.dot(noise_mat, kern_), (Ncol, len(pe_rng)))
 
-        kern.append((pe_rng, kern_))
-        # Put the solution back
-        emi_hat[:, pe_rng] = np.reshape(cp.dot(noise_mat, kern_), (Ncol, len(pe_rng)))
+    return to_numpy(emi_hat), kern
 
-    return emi_hat, kern
+def est_emi(signal_in: npt.NDArray[np.complex64], sniffer: npt.NDArray[np.complex64], line_grps: list[npt.NDArray], dk: list[int], w: npt.NDArray[np.float32]):
+    return _est_emi_impl(signal_in, sniffer, line_grps, dk, w, np, lambda x: x)
 
 def est_emi_gpu(signal_in: npt.NDArray[np.complex64], sniffer: npt.NDArray[np.complex64], line_grps: list[npt.NDArray], dk: list[int], w: npt.NDArray[np.float32]):
-        
-    Ncol, Nlin, Nc = sniffer.shape
-    # Ngrp = len(line_grps)
-    emi_hat = np.zeros((Ncol, Nlin), dtype=np.complex64)
-    kern = [] # np.zeros((Nc * (dk[0] * 2 + 1) * (dk[1] * 2 + 1), Ngrp))
-    for cwin, pe_rng in enumerate(line_grps):
-        # pe_rng is the range of lines in the current group
-        noise_mat = get_noise_mtx(cp.asarray(sniffer[:, pe_rng, :]), dk)
-
-        # Select grouped lines and flatten for inversion
-        init_mat_sub = cp.reshape(cp.asarray(signal_in[:, pe_rng]), (Ncol * len(pe_rng), 1))
-
-        ww = cp.reshape(cp.asarray(w[:, pe_rng]), (Ncol * len(pe_rng), 1))
-
-        # Solving the linear system
-        kern_ ,_,_,_ = cp.linalg.lstsq(ww * noise_mat, ww * init_mat_sub, rcond=None)
-
-        kern.append((pe_rng, kern_.get()))
-        # Put the solution back
-        emi_hat[:, pe_rng] = cp.reshape(cp.dot(noise_mat, kern_), (Ncol, len(pe_rng))).get()
-
-    return emi_hat, kern
+    if cp is None:
+        warn('CuPy is unavailable; falling back to the CPU EDITER path.')
+        return est_emi(signal_in, sniffer, line_grps, dk, w)
+    return _est_emi_impl(signal_in, sniffer, line_grps, dk, w, cp, _to_numpy)
 
 def apply_editer(signal_in: npt.NDArray[np.complex64], sniffer: npt.NDArray[np.complex64], params, w) -> tuple[npt.NDArray[np.complex64], npt.NDArray[np.complex64]]:
     max_lines = params['max_lines_per_group']
@@ -175,10 +188,14 @@ def apply_editer(signal_in: npt.NDArray[np.complex64], sniffer: npt.NDArray[np.c
             line_grps.append(np.arange(((grp_i)*max_lines), min(max_lines*(grp_i+1), nlin)))
 
 
-    if params['gpu'] == -1:
+    if params['gpu'] == -1 or not _cupy_ready():
         emi_hat, kernels = est_emi(signal_in, sniffer, line_grps, params['dk'], w)
     else:
-        with cp.cuda.Device(params['gpu']):
-            emi_hat, kernels = est_emi_gpu(signal_in, sniffer, line_grps, params['dk'], w)
+        try:
+            with cp.cuda.Device(params['gpu']):
+                emi_hat, kernels = est_emi_gpu(signal_in, sniffer, line_grps, params['dk'], w)
+        except Exception as exc:
+            warn(f'CuPy/CUDA EDITER execution failed; falling back to CPU. ({exc!r})')
+            emi_hat, kernels = est_emi(signal_in, sniffer, line_grps, params['dk'], w)
     return emi_hat, kernels
     
