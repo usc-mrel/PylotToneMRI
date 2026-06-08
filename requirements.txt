@@ -9,5 +9,5 @@ pyfftw
 hyperspy
 pip
 mpl-interactions # For custom ROI in noise_graph_from_series.ipynb
-mpl-image-segmenter
+mpl-image-segmenter # Optional: For image segmentation (install with: pip install pylottone[segmentation])
 cupy-cuda12x # For GPU acceleration at EDITER processing.

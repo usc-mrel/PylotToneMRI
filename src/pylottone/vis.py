@@ -6,7 +6,6 @@ from ipywidgets import Layout
 import numpy as np
 from typing import List, Tuple, Optional
 from IPython.display import display
-from mpl_image_segmenter import ImageSegmenter
 
 def get_circle_radius(sphere_radius: float, d: float) -> float:
     """
@@ -230,6 +229,14 @@ class SignalInterferenceFreehandSegmenter:
         cmap : str
             Colormap for image display
         """
+        # Lazy import ImageSegmenter to make mpl-image-segmenter optional
+        try:
+            from mpl_image_segmenter import ImageSegmenter
+        except ImportError:
+            raise ImportError(
+                "mpl-image-segmenter is required for image segmentation. "
+                "Install it with: pip install pylottone[segmentation]"
+            )
         # Calculate display window if not provided
         if vmin is None:
             vmin = np.percentile(np.abs(image), 5)
