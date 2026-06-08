@@ -8,13 +8,13 @@ authors = [
 ]
 requires-python = ">=3.11"
 dependencies = [
-    "ismrmrd>=1.14.1",
     "matplotlib>=3.10.5",
     "numpy>=2.3.2",
     "pyfftw>=0.15.0",
 ]
 
 [project.optional-dependencies]
+mrd = ["ismrmrd>=1.14.1"]
 gpu = ["cupy-cuda12x>=13.6.0"]
 ui = ["pyside6>=6.9.1"]
 segmentation = ["mpl-image-segmenter>=0.2.1"]

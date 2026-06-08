@@ -1,4 +1,3 @@
-ismrmrd
 matplotlib     # used by rgb.py and provides various visualization tools including colormaps
 numpy
 pyside6       # Optional: For UI components (install with: pip install pylottone[ui])
@@ -11,3 +10,4 @@ pip
 mpl-interactions # For custom ROI in noise_graph_from_series.ipynb
 mpl-image-segmenter # Optional: For image segmentation (install with: pip install pylottone[segmentation])
 cupy-cuda12x # For GPU acceleration at EDITER processing.
+# Optional: For ISMRMRD workflows and reconstruction support install with: pip install pylottone[mrd]

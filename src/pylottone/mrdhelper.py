@@ -1,16 +1,31 @@
 import copy
-from pylottone.constants import ECG_WAVEFORM_ID, PULSEOX_WAVEFORM_ID, PILOTTONE_WAVEFORM_ID, PILOTTONE_CH, EXT1_WAVEFORM_ID, RESPPT_WAVEFORM_ID
-import ismrmrd
-import numpy as np
-import os
 import fnmatch
-import warnings
-import time
-import re
 import logging
+import os
+import re
+import time
+import warnings
+from typing import TYPE_CHECKING
+
+import numpy as np
 from scipy.io import loadmat
 
+from pylottone.constants import ECG_WAVEFORM_ID, PULSEOX_WAVEFORM_ID, PILOTTONE_WAVEFORM_ID, PILOTTONE_CH, EXT1_WAVEFORM_ID, RESPPT_WAVEFORM_ID
+
+if TYPE_CHECKING:
+    import ismrmrd
+
+try:
+    import ismrmrd
+except ImportError:
+    ismrmrd = None
+
 logging.basicConfig(level=logging.INFO)
+
+
+def _require_ismrmrd() -> None:
+    if ismrmrd is None:
+        raise ImportError("ismrmrd is required for MRD file I/O. Install with: pip install pylottone[mrd]")
 
 def siemens_mrd_finder(data_root: str, data_folder: str, raw_file: str, h5folderext: str = '', rawfile_ext: str = '') -> str:
     """
@@ -54,7 +69,7 @@ def siemens_mrd_finder(data_root: str, data_folder: str, raw_file: str, h5folder
 
     return ismrmrd_data_fullpath, ismrmrd_noise_fullpath
     
-def read_waveforms(filepath: str, dataset_name: str = 'dataset') -> list[ismrmrd.Waveform]:
+def read_waveforms(filepath: str, dataset_name: str = 'dataset') -> "tuple[list[ismrmrd.Waveform], ismrmrd.xsd.ismrmrdHeader]":
     '''Reads all waveforms from an ISMRMRD dataset.
         Parameters
         ----------
@@ -68,6 +83,7 @@ def read_waveforms(filepath: str, dataset_name: str = 'dataset') -> list[ismrmrd
         xml_header : ismrmrd.xsd.ismrmrdHeader
             XML header.
     '''
+    _require_ismrmrd()
     print(f'Reading {filepath}...')
     with ismrmrd.File(filepath) as mrd:
         waveform_list = mrd[dataset_name].waveforms[:]
@@ -77,7 +93,7 @@ def read_waveforms(filepath: str, dataset_name: str = 'dataset') -> list[ismrmrd
 
     return waveform_list, xml_header
 
-def waveforms_asarray(waveform_list: list[ismrmrd.Waveform], ecg_channel: int=0, ext_as_ecg: bool=False) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
+def waveforms_asarray(waveform_list: "list[ismrmrd.Waveform]", ecg_channel: int=0, ext_as_ecg: bool=False) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
     '''Converts a list of waveforms to numpy arrays for ECG and PT.
         Parameters
         ----------
@@ -168,7 +184,7 @@ def waveforms_asarray(waveform_list: list[ismrmrd.Waveform], ecg_channel: int=0,
 
     return ecg_, pt_
 
-def waveforms_asarray2(wf_list: list[ismrmrd.Waveform]) -> dict:
+def waveforms_asarray2(wf_list: "list[ismrmrd.Waveform]") -> dict:
     '''An alternative function to sort and convert a list of waveforms to numpy arrays.
         Parameters
         ----------
@@ -265,7 +281,7 @@ def waveforms_asarray2(wf_list: list[ismrmrd.Waveform]) -> dict:
 
     return waveform_dict
 
-def read_mrd(ismrmrd_data_fullpath: str) -> tuple[list[ismrmrd.Acquisition], list[ismrmrd.Waveform], ismrmrd.xsd.ismrmrdHeader]:
+def read_mrd(ismrmrd_data_fullpath: str) -> "tuple[list[ismrmrd.Acquisition], list[ismrmrd.Waveform], ismrmrd.xsd.ismrmrdHeader]":
     '''Reads an ISMRMRD dataset.
         Parameters
         ----------
@@ -281,6 +297,7 @@ def read_mrd(ismrmrd_data_fullpath: str) -> tuple[list[ismrmrd.Acquisition], lis
         hdr : ismrmrd.xsd.ismrmrdHeader
             XML header.
         '''
+    _require_ismrmrd()
     start = time.time()
     print('=' * 50)
     print(f'Reading {ismrmrd_data_fullpath}...')
@@ -309,7 +326,7 @@ def read_mrd(ismrmrd_data_fullpath: str) -> tuple[list[ismrmrd.Acquisition], lis
 
     return acq_list, wf_list, hdr
 
-def read_adj(ismrmrd_noise_fullpath: str) -> tuple[np.ndarray, np.ndarray, np.ndarray, ismrmrd.xsd.ismrmrdHeader]:
+def read_adj(ismrmrd_noise_fullpath: str) -> "tuple[np.ndarray, np.ndarray, np.ndarray, ismrmrd.xsd.ismrmrdHeader]":
     '''Reads the coil sensitivity maps and noise from an ISMRMRD dataset.
         Parameters
         ----------
@@ -326,6 +343,7 @@ def read_adj(ismrmrd_noise_fullpath: str) -> tuple[np.ndarray, np.ndarray, np.nd
             XML header.
     '''
 
+    _require_ismrmrd()
     acq_list_noise, _, hdr_noise = read_mrd(ismrmrd_noise_fullpath)
     acq_csm = [acq_ for acq_ in acq_list_noise if acq_.isFlagSet(ismrmrd.ACQ_IS_SURFACECOILCORRECTIONSCAN_DATA)]
     acq_noise = [acq_.data for acq_ in acq_list_noise if acq_.isFlagSet(ismrmrd.ACQ_IS_NOISE_MEASUREMENT)]
@@ -389,8 +407,10 @@ def get_volt_from_protoname(proto_name: str) -> float:
     return pt_volt
 
 def save_processed_raw_data(output_data_fullpath: str, 
-                               hdr: ismrmrd.xsd.ismrmrdHeader, acq_list: list[ismrmrd.Acquisition], wf_list: list[ismrmrd.Waveform], 
-                               ksp_processed: np.ndarray, mri_coils: np.ndarray, pt_wf: None | ismrmrd.Waveform = None, user_params: dict = {}) -> None:
+                               hdr: "ismrmrd.xsd.ismrmrdHeader", acq_list: "list[ismrmrd.Acquisition]", wf_list: "list[ismrmrd.Waveform]", 
+                               ksp_processed: np.ndarray, mri_coils: np.ndarray, pt_wf: "ismrmrd.Waveform | None" = None, user_params: dict = {}) -> None:
+
+    _require_ismrmrd()
 
     # Update new parameters to XML header.
     new_hdr = copy.deepcopy(hdr)

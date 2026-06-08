@@ -1,9 +1,14 @@
-import ismrmrd
+from typing import TYPE_CHECKING
+
 import numpy as np
 import numpy.typing as npt
 import pyfftw
 
-def calc_fovshift_phase(kx: npt.NDArray, ky: npt.NDArray, acq: ismrmrd.Acquisition) -> npt.NDArray[np.complex64]:
+if TYPE_CHECKING:
+    import ismrmrd
+
+
+def calc_fovshift_phase(kx: npt.NDArray, ky: npt.NDArray, acq: "ismrmrd.Acquisition") -> npt.NDArray[np.complex64]:
     '''Calculate the phase demodulation due to the FOV shift in the GCS.
 
     Parameters:
@@ -24,7 +29,7 @@ def calc_fovshift_phase(kx: npt.NDArray, ky: npt.NDArray, acq: ismrmrd.Acquisiti
     gbar = 42.576e6
 
     gx = np.diff(np.concatenate((np.zeros((1, kx.shape[1]), dtype=kx.dtype), kx)), axis=0)/gbar # [T/m]
-    gy = np.diff(np.concatenate((np.zeros((1, kx.shape[1]), dtype=kx.dtype), ky)), axis=0)/gbar # [T/m]
+    gy = np.diff(np.concatenate((np.zeros((1, kx.shape[1]), dtype=ky.dtype), ky)), axis=0)/gbar # [T/m]
     g_nom = np.stack((gx, gy), axis=2)
     g_gcs = np.concatenate((g_nom, np.zeros((g_nom.shape[0], g_nom.shape[1], 1))), axis=2)
 
@@ -44,7 +49,7 @@ def calc_fovshift_phase(kx: npt.NDArray, ky: npt.NDArray, acq: ismrmrd.Acquisiti
     return phase_mod_rads.astype(np.complex64)
 
 
-def calc_cartesian_fovshift_phase(fov: float, dt: float, acq: ismrmrd.Acquisition) -> npt.NDArray[np.complex64]:
+def calc_cartesian_fovshift_phase(fov: float, dt: float, acq: "ismrmrd.Acquisition") -> npt.NDArray[np.complex64]:
     '''Calculate the phase demodulation due to the FOV shift in the GCS for Cartesian trajectory.
 
     Parameters:

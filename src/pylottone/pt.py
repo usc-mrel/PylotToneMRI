@@ -1,7 +1,6 @@
 import math
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
-import ismrmrd
 import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
@@ -22,6 +21,9 @@ from .signal import (
 )
 from .sobi import sobi
 from .trajectory import calc_fovshift_phase
+
+if TYPE_CHECKING:
+    import ismrmrd
 
 
 def est_dtft(t, data, deltaf, window):
@@ -51,7 +53,7 @@ def dtft_sum(data, dt, deltaf):
 
 
 def extract_raw_pt(ksp_measured: np.ndarray, kx: np.ndarray, ky: np.ndarray,
-                    n_unique_angles: int, acq: ismrmrd.Acquisition, 
+                    n_unique_angles: int, acq: "ismrmrd.Acquisition", 
                     f_diff: float, df: float, dt: float, method: Literal['sine', 'wPCA'] = 'sine', 
                     freq_correction: bool = True, return_complex: bool = False) -> tuple[np.ndarray, np.ndarray]:
     

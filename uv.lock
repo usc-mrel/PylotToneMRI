@@ -1726,7 +1726,6 @@ name = "pylottone"
 version = "0.1.3"
 source = { editable = "." }
 dependencies = [
-    { name = "ismrmrd" },
     { name = "matplotlib" },
     { name = "numpy" },
     { name = "pyfftw" },
@@ -1735,6 +1734,9 @@ dependencies = [
 [package.optional-dependencies]
 gpu = [
     { name = "cupy-cuda12x" },
+]
+mrd = [
+    { name = "ismrmrd" },
 ]
 segmentation = [
     { name = "mpl-image-segmenter" },
@@ -1756,14 +1758,14 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "cupy-cuda12x", marker = "extra == 'gpu'", specifier = ">=13.6.0" },
-    { name = "ismrmrd", specifier = ">=1.14.1" },
+    { name = "ismrmrd", marker = "extra == 'mrd'", specifier = ">=1.14.1" },
     { name = "matplotlib", specifier = ">=3.10.5" },
     { name = "mpl-image-segmenter", marker = "extra == 'segmentation'", specifier = ">=0.2.1" },
     { name = "numpy", specifier = ">=2.3.2" },
     { name = "pyfftw", specifier = ">=0.15.0" },
     { name = "pyside6", marker = "extra == 'ui'", specifier = ">=6.9.1" },
 ]
-provides-extras = ["gpu", "ui", "segmentation"]
+provides-extras = ["mrd", "gpu", "ui", "segmentation"]
 
 [package.metadata.requires-dev]
 dev = [

@@ -23,6 +23,12 @@ Install via `pip` in dev mode:
 pip install -e .
 ```
 
+If you need ISMRMRD file I/O, waveform injection, or reconstruction tooling, install the MRD extra:
+
+```bash
+pip install -e '.[mrd]'
+```
+
 To enable GPU acceleration for EDITER, install the optional GPU extra:
 
 ```bash
@@ -35,6 +41,12 @@ It can be directly installed from GitHub via `pip`:
 pip install git+https://github.com/usc-mrel/PylotToneMRI
 ```
 
+If you need ISMRMRD-backed workflows from the GitHub install, use:
+
+```bash
+pip install 'pylottone[mrd] @ git+https://github.com/usc-mrel/PylotToneMRI'
+```
+
 If you want EDITER GPU support from the GitHub install, use:
 
 ```bash
@@ -45,7 +57,7 @@ pip install 'pylottone[gpu] @ git+https://github.com/usc-mrel/PylotToneMRI'
 
 # Usage
 
-Most inputs and outputs are in [ISMRMRD](https://ismrmrd.readthedocs.io/en/latest/) format. Some scripts do modify the input raw data, so in case something goes wrong, it is important to back-up original raw data. For a more detailed explanation of raw data, please refer to subsection [Directory Hierarchy for Raw Data](#directory-hierarchy-for-raw-data).
+Most inputs and outputs are in [ISMRMRD](https://ismrmrd.readthedocs.io/en/latest/) format. Base `pylottone` installs now leave ISMRMRD optional; install `pylottone[mrd]` for MRD file I/O, waveform editing, and reconstruction tooling. Some scripts do modify the input raw data, so in case something goes wrong, it is important to back-up original raw data. For a more detailed explanation of raw data, please refer to subsection [Directory Hierarchy for Raw Data](#directory-hierarchy-for-raw-data).
 
 Most scripts take the configuration file in `toml` format, for specifying input data and some important parameters. An example config file, `example_config.toml` can be used as the template.
 
@@ -75,7 +87,7 @@ Most scripts also accepts list of inputs to be processed as a list of filepaths 
 
 -----
 
-`send_to_recon_server.py`: This script is part of the package and also provides an entry point that can be called as `send_to_recon_server`. It configures and runs the MRD client, which in turn sends the waveforms and the raw data to the reconstruction server. A server toolkit that includes some reconstructions, including several ones capable of processing pilot tone is provided [here](https://github.com/usc-mrel/python-ismrmrd-server).
+`send_to_recon_server.py`: This script is part of the package and also provides an entry point that can be called as `send_to_recon_server`. It configures and runs the MRD client, which in turn sends the waveforms and the raw data to the reconstruction server. This workflow requires the `mrd` extra. A server toolkit that includes some reconstructions, including several ones capable of processing pilot tone is provided [here](https://github.com/usc-mrel/python-ismrmrd-server).
 
 There are several notebooks under `notebooks/` directory for mostly debugging or interactive usage purposes.
 

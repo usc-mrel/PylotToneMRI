@@ -3,17 +3,22 @@
 # from server import Server
 
 import argparse
-import logging
 import datetime
-import h5py
+import json
+import logging
+import multiprocessing
+import os
 import socket
 import sys
-import ismrmrd
-import multiprocessing
-from .connection import Connection
 import time
-import os
-import json
+import h5py
+
+from .connection import Connection
+
+try:
+    import ismrmrd
+except ImportError:
+    ismrmrd = None
 
 defaults = {
     'filename':           '',
@@ -29,6 +34,11 @@ defaults = {
     'verbose':            False,
     'logfile':            ''
 }
+
+
+def _require_ismrmrd() -> None:
+    if ismrmrd is None:
+        raise ImportError("ismrmrd is required for MRD reconstruction client support. Install with: pip install pylottone[mrd]")
 
 def connection_receive_loop(sock, outfile, outgroup, verbose, logfile, recvAcqs, recvImages, recvWaveforms):
     """Start a Connection instance to receive data, generally run in a separate thread"""
@@ -69,6 +79,8 @@ def connection_receive_loop(sock, outfile, outgroup, verbose, logfile, recvAcqs,
     recvWaveforms.value = incoming_connection.recvWaveforms
 
 def main(args):
+    _require_ismrmrd()
+
     # ----- Load and validate file ---------------------------------------------
     if (args.config_local):
         if not os.path.exists(args.config_local):

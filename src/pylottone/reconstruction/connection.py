@@ -1,18 +1,29 @@
-from . import constants
-import ismrmrd
 import ctypes
-import os
-from datetime import datetime
-import h5py
-import random
-import threading
-
 import logging
+import os
+import random
 import socket
+import threading
+from datetime import datetime
+
+import h5py
 import numpy as np
+
+from . import constants
+
+try:
+    import ismrmrd
+except ImportError:
+    ismrmrd = None
+
+
+def _require_ismrmrd() -> None:
+    if ismrmrd is None:
+        raise ImportError("ismrmrd is required for MRD streaming support. Install with: pip install pylottone[mrd]")
 
 class Connection:
     def __init__(self, socket, savedata, savedataFile = "", savedataFolder = "", savedataGroup = "dataset"):
+        _require_ismrmrd()
         self.savedata       = savedata
         self.savedataFile   = savedataFile
         self.savedataFolder = savedataFolder
