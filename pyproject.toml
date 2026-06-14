@@ -17,7 +17,10 @@ dependencies = [
 [project.optional-dependencies]
 mrd = ["ismrmrd>=1.14.1"]
 gpu = ["cupy-cuda12x>=13.6.0"]
-ui = ["pyside6>=6.9.1"]
+ui = [
+    "ipywidgets>=8",
+    "pyside6>=6.9.1",
+]
 segmentation = ["mpl-image-segmenter>=0.2.1"]
 
 [project.scripts]

@@ -1,11 +1,22 @@
 import matplotlib.pyplot as plt
 import matplotlib
 from matplotlib.patches import Circle
-import ipywidgets as widgets
-from ipywidgets import Layout
 import numpy as np
 from typing import List, Tuple, Optional
-from IPython.display import display
+
+
+def _require_notebook_ui():
+    try:
+        import ipywidgets as widgets
+        from ipywidgets import Layout
+        from IPython.display import display
+    except ImportError as exc:
+        raise ImportError(
+            "Notebook UI support requires ipywidgets and IPython. "
+            "Install it with: pip install pylottone[ui]"
+        ) from exc
+
+    return widgets, Layout, display
 
 def get_circle_radius(sphere_radius: float, d: float) -> float:
     """
@@ -75,6 +86,7 @@ class SpherePlacer:
 
     def _setup_sliders(self):
         """Initialize the slice selection sliders"""
+        widgets, _, _ = _require_notebook_ui()
         self.slice_slider_axial = widgets.IntSlider(
             value=self.ny//2, 
             min=0, 
@@ -172,6 +184,7 @@ class SpherePlacer:
             
     def show(self):
         """Display the interactive viewer"""
+        widgets, _, display = _require_notebook_ui()
         display(widgets.VBox([self.slice_slider_axial, self.slice_slider_coronal]))
         plt.show()
         
@@ -229,7 +242,8 @@ class SignalInterferenceFreehandSegmenter:
         cmap : str
             Colormap for image display
         """
-        # Lazy import ImageSegmenter to make mpl-image-segmenter optional
+        # Lazy import notebook UI and ImageSegmenter to keep both optional
+        widgets, _, display = _require_notebook_ui()
         try:
             from mpl_image_segmenter import ImageSegmenter
         except ImportError:
@@ -336,6 +350,8 @@ class PickPixel4Correlation:
         self.cmap = cmap
         self.coil_names = coil_names
         self.ref_vals = ref_vals
+        widgets, _, display = _require_notebook_ui()
+        self._display = display
         
         # Calculate display window if not provided
         if vmin is None:
@@ -401,7 +417,7 @@ class PickPixel4Correlation:
             
     def show(self):
         """Display the interactive viewer."""
-        display(self.slice_slider)
+        self._display(self.slice_slider)
         plt.show()
 
 def ndv(data, ax: matplotlib.axes.Axes = None,  YX = [-2,-1], voxel_shape=None,  overlay_img=None, overlay_cmap='gray', colorbar=False, slider_values=None, clim=None, figsize=None, **kwargs):
@@ -420,6 +436,7 @@ def ndv(data, ax: matplotlib.axes.Axes = None,  YX = [-2,-1], voxel_shape=None, 
 
     Original code taken from https://github.com/danionella/ndview/tree/master
     '''
+    widgets, Layout, display = _require_notebook_ui()
     
     dims = data.shape
     if ax is None:
