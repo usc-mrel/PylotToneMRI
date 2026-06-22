@@ -24,14 +24,12 @@ try:
     from pylottone.selectionui import get_multiple_filepaths
 except ImportError:
     get_multiple_filepaths = None
-from pylottone.signal import angle_dependant_filtering
 from pylottone.trajectory import remove_readout_os
 from pylottone.triggering import extract_triggers, pt_ecg_jitter
 
 # TODO: 
 # 1. Switch to new extraction method.
-# 2. Decouple UI and CUDA functionality of the package to make them optional deps.
-
+# 2. Fix ext1 trigs having multiple trigger per trigger.
 
 # %%
 # Read the data in
@@ -93,6 +91,7 @@ def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
     ## Process ECG waveform
     wf_dict = mrdhelper.waveforms_asarray2(wf_list)
     ecg_exists = False
+    ext1_exists = False
     if 'ecg' in wf_dict:
         ecg_waveform = wf_dict['ecg'][1][:,0]
         ecg_waveform = pt.check_waveform_polarity(ecg_waveform, 0.5, method='width')*ecg_waveform
@@ -108,8 +107,10 @@ def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
     else:
         print('No Pulse Oximeter waveform found.')
     if 'ext1' in wf_dict:
-        time_ext1 = wf_dict['ext1'][0] - acq_list[0].acquisition_time_stamp*2.5e-3
-        ext1_trigs = wf_dict['ext1'][1]
+        time_ext1 = wf_dict['ext1'][0] - acq_list[0].acquisition_time_stamp*2.5e-3 - 0.35
+        ext1_waveform = wf_dict['ext1'][1][:,0]
+        ext1_trigs = wf_dict['ext1'][1][:,-1]
+        ext1_exists = True
     else:
         print('No external trigger waveform found.')
     if 'resp' in wf_dict:
@@ -138,32 +139,17 @@ def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
     # %%
 
     f_samp = 1/samp_time_pt # [Hz]
-    print(f"Using {cfg['pilottone']['cardiac']['initial_channel']} as the initial cardiac coil.")
-    pt_extract_params = {'golay_filter_len': cfg['pilottone']['golay_filter_len'],
+
+    pt_extract_params = {'num_lags': 375,
                         'respiratory': {
                                 'freq_start': cfg['pilottone']['respiratory']['freq_start'],
                                 'freq_stop': cfg['pilottone']['respiratory']['freq_stop'],
-                                'corr_threshold': cfg['pilottone']['respiratory']['corr_threshold'],
-                                'corr_init_ch': cfg['pilottone']['respiratory']['initial_channel'],
-                                'separation_method': cfg['pilottone']['respiratory']['separation_method'], # 'sobi', 'pca'
                         },
                         'cardiac': {
                                     'freq_start': cfg['pilottone']['cardiac']['freq_start'],
                                     'freq_stop': cfg['pilottone']['cardiac']['freq_stop'],
-                                    'corr_threshold': cfg['pilottone']['cardiac']['corr_threshold'],
-                                    'corr_init_ch': np.nonzero(coil_name == cfg['pilottone']['cardiac']['initial_channel'])[0][0],                           
-                                    'separation_method': cfg['pilottone']['cardiac']['separation_method'], # 'sobi', 'pca'
-                                    'num_lags': 375, # SOBI number of lags
                         },
-                        'debug': {
-                            'selected_coils': cfg['pilottone']['debug']['selected_coils'],
-                            'coil_legend': coil_name[mri_coils],
-                            'show_plots': cfg['pilottone']['debug']['show_plots'],
-                            'no_normalize': cfg['pilottone']['debug']['no_normalize'],
-                        }
                     }
-
-    sg_filter_len = 81
 
     pt_respiratory, pt_cardiac = pt.extract_pilottone_navs(pt_sig, f_samp, pt_extract_params)
     
@@ -177,7 +163,9 @@ def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
                  pt_cardiac=pt_cardiac,
                  time_pt=time_pt)
 
-    pt_cardiac = cfg['pilottone']['cardiac']['sign']*pt_cardiac
+    sg_filter_len = 81
+
+    # pt_cardiac = cfg['pilottone']['cardiac']['sign']*pt_cardiac
     pt_cardiac[:20] = pt_cardiac[20]
     pt_cardiac[-20:] = pt_cardiac[-20]
     pt_cardiac -= np.percentile(pt_cardiac, 10)
@@ -190,13 +178,18 @@ def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
     pt_cardiac_derivative -= np.percentile(pt_cardiac_derivative, 10)
     pt_cardiac_derivative /= np.percentile(pt_cardiac_derivative, 98)
 
-    pt_cardiac_trigs = extract_triggers(time_pt, pt_cardiac, skip_time=1, prominence=0.4, max_hr=160)
-    pt_derivative_trigs = extract_triggers(time_pt, pt_cardiac_derivative, skip_time=1, prominence=0.5, max_hr=160)
+    pt_cardiac_trigs = extract_triggers(time_pt, pt_cardiac, skip_time=0.5, prominence=0.4, max_hr=160)
+    pt_derivative_trigs = extract_triggers(time_pt, pt_cardiac_derivative, skip_time=0.5, prominence=0.5, max_hr=160)
 
     if ecg_exists:
         _,_ = pt_ecg_jitter(time_pt, pt_cardiac, pt_cardiac_derivative,
                             time_ecg, ecg_waveform, 
                             pt_cardiac_trigs=pt_cardiac_trigs, pt_derivative_trigs=pt_derivative_trigs, ecg_trigs=ecg_trigs, 
+                            skip_time=1, show_outputs=cfg['pilottone']['show_outputs'])
+    elif ext1_exists:
+        _,_ = pt_ecg_jitter(time_pt, pt_cardiac, pt_cardiac_derivative,
+                            time_ext1, ext1_waveform, 
+                            pt_cardiac_trigs=pt_cardiac_trigs, pt_derivative_trigs=pt_derivative_trigs, ecg_trigs=ext1_trigs, 
                             skip_time=1, show_outputs=cfg['pilottone']['show_outputs'])
     elif cfg['pilottone']['show_outputs']:
         fig, axs = plt.subplots(2,1, figsize=(10, 6), sharex=True)

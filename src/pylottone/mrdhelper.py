@@ -251,7 +251,7 @@ def waveforms_asarray2(wf_list: "list[ismrmrd.Waveform]") -> dict:
 
     pulseox = np.concatenate(pulseox, axis=1).T if len(pulseox) > 0 else np.array([])
     if len(pulseox) > 0:
-        is_flat = np.all(pulseox[:, 0] == pulseox[0, 0], axis=0) # Check if the waveform is flat
+        is_flat = np.all(np.diff(pulseox, axis=0) == 0)
         if not np.isnan(pulseox).all() and not is_flat and not np.all(pulseox[:,1]):
             pulseox_trigs = pulseox[:, 1].astype(np.int32)
             pulseox_trigs[pulseox_trigs > 0] = 1
@@ -271,10 +271,12 @@ def waveforms_asarray2(wf_list: "list[ismrmrd.Waveform]") -> dict:
 
     ext1 = np.concatenate(ext1, axis=1).T if len(ext1) > 0 else np.array([])
     if len(ext1) > 0:
-        is_flat = np.all(ext1[:, 0] == ext1[0, 0], axis=0) or np.all(ext1[:, 1] == ext1[0, 1], axis=0)
+        is_flat = np.all(np.diff(ext1, axis=0) == 0)
         if not np.isnan(ext1).all() and not is_flat:
-            ext1 = ext1[:, 1].astype(np.float32)
+            ext1 = ext1[:, 0].astype(np.float32)
             ext1[ext1 > 0] = 1
+            ext1_trgs = (np.concatenate(([0],np.diff(ext1, axis=0))) > 0).astype(np.float32)
+            ext1 = np.concatenate((ext1[:, np.newaxis], ext1_trgs[:, np.newaxis]), axis=1)
             # t_ext1 = np.arange(ext1.shape[0])*ext1_sample_time + t_init_ext1
             t_ext1 = np.array(t_ext1)
             waveform_dict['ext1'] = (t_ext1, ext1)

@@ -7,9 +7,10 @@ import numpy.typing as npt
 import scipy as sp
 from numpy.fft import fft, ifft
 from scipy.linalg import lstsq
-from scipy.signal import find_peaks, peak_widths, savgol_filter
+from scipy.signal import find_peaks, peak_widths, savgol_filter, firwin, filtfilt
 from scipy.signal.windows import tukey
 from scipy.sparse.linalg import svds
+import logging
 
 from .signal import (
     angle_dependant_filtering,
@@ -21,6 +22,9 @@ from .signal import (
 )
 from .sobi import sobi
 from .trajectory import calc_fovshift_phase
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     import ismrmrd
@@ -226,6 +230,46 @@ def check_waveform_polarity(waveform: npt.NDArray[np.float64], prominence: float
 
 def extract_pilottone_navs(pt_sig, f_samp: float, params: dict):
     '''Extract the respiratory and cardiac pilot tone signals from the given PT signal.
+    Parameters:
+    ----------
+    pt_sig (np.array): Pilot tone signal.
+    f_samp (float): Sampling frequency of the PT signal.
+    params (dict): Dictionary containing the parameters for the extraction.
+
+    Returns:
+    ----------
+    pt_respiratory (np.array): Extracted respiratory pilot tone signal.
+    pt_cardiac (np.array): Extracted cardiac pilot tone signal.
+    '''
+    n_pt_samp = pt_sig.shape[0]
+    
+    h_cardiac = firwin(2 * (n_pt_samp // 8) - 1, [params['cardiac']['freq_start'], params['cardiac']['freq_stop']], fs=f_samp, window=("tukey", 1), pass_zero=False)
+    h_respiratory = firwin(2 * (n_pt_samp // 8) - 1, [params['respiratory']['freq_start'], params['respiratory']['freq_stop']], fs=f_samp, window=("tukey", 1), pass_zero=False)
+    
+    # Estimate actual length of the FIR filters.
+    eps = 1e-9
+    firlen_cardiac = np.sum(h_cardiac > eps)
+    firlen_respiratory = np.sum(h_respiratory > eps)
+
+    s_sobi, Asobi, Bsobi = sobi(pt_sig.T, num_lags=params['cardiac']['num_lags'])
+
+    # Detect which channels are cardiac and respiratory navigators.
+    r_idx2, r_stds2 = pick_source_bypeak(s_sobi.T, f_samp, fmask_low=0.2, fmask_high=0.6)
+    c_idx2, c_stds2 = pick_source_bypeak(s_sobi.T, f_samp)
+
+    logger.info(f"Picked respiratory source indices: {r_idx2}, stds: {r_stds2}")
+    logger.info(f"Picked cardiac source indices: {c_idx2}, stds: {c_stds2}")
+    pt_cardiac = filtfilt(h_cardiac, [1], s_sobi[c_idx2[0], :], axis=0, method="gust", irlen=firlen_cardiac)
+    pt_respiratory = filtfilt(h_respiratory, [1], s_sobi[r_idx2[0], :], axis=0, method="gust", irlen=firlen_respiratory)
+
+    # Check and correct for the sign
+    pt_cardiac = check_waveform_polarity(pt_cardiac[40:], method='width')*pt_cardiac
+
+    return pt_respiratory, pt_cardiac
+
+def extract_pilottone_navs_old(pt_sig, f_samp: float, params: dict):
+    ''' This is the old method, replaced by a more robust and automated method, kept for reference.
+    Extract the respiratory and cardiac pilot tone signals from the given PT signal.
     Parameters:
     ----------
     pt_sig (np.array): Pilot tone signal.
