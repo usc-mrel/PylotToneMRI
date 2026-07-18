@@ -23,7 +23,6 @@ from .signal import (
 from .sobi import sobi
 from .trajectory import calc_fovshift_phase
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
@@ -251,7 +250,7 @@ def extract_pilottone_navs(pt_sig, f_samp: float, params: dict):
     firlen_cardiac = np.sum(h_cardiac > eps)
     firlen_respiratory = np.sum(h_respiratory > eps)
 
-    s_sobi, Asobi, Bsobi = sobi(pt_sig.T, num_lags=params['cardiac']['num_lags'])
+    s_sobi, Asobi, Bsobi = sobi(pt_sig.T, num_lags=params['num_lags'])
 
     # Detect which channels are cardiac and respiratory navigators.
     r_idx2, r_stds2 = pick_source_bypeak(s_sobi.T, f_samp, fmask_low=0.2, fmask_high=0.6)

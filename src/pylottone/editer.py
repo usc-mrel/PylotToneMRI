@@ -143,14 +143,46 @@ def get_noise_mtx(
     return noise_mat
 
 
-def _est_emi_impl(signal_in, sniffer, line_grps, dk, w, xp, to_numpy):
+def _denoise_sniffer_window(
+    snf,
+    denoise_rank: int,
+    xp,
+):
+    """Low-rank denoise of a sniffer window along coil dimension.
+
+    Args:
+        snf: Array of shape (Ncol, Nlin_window, Nsniffer_coils).
+        denoise_rank: Number of singular values/components to keep.
+        xp: Backend module (numpy or cupy).
+    """
+    if denoise_rank <= 0:
+        return snf
+
+    n_col, n_lin, n_ch = snf.shape
+    snf_mat = snf.reshape(n_col * n_lin, n_ch)
+    min_dim = min(snf_mat.shape)
+    keep_rank = min(denoise_rank, min_dim)
+
+    if keep_rank >= min_dim:
+        return snf
+
+    u, s, vh = xp.linalg.svd(snf_mat, full_matrices=False)
+    snf_denoised = (u[:, :keep_rank] * s[:keep_rank]) @ vh[:keep_rank, :]
+    return snf_denoised.reshape(n_col, n_lin, n_ch)
+
+
+def _est_emi_impl(signal_in, sniffer, line_grps, dk, w, denoise_sniffers, denoise_rank, xp, to_numpy):
     Ncol, Nlin, Nc = sniffer.shape
     emi_hat = xp.zeros((Ncol, Nlin), dtype=np.complex64)
     kern = []
 
     for cwin, pe_rng in enumerate(line_grps):
-        # Build noise matrix and input vectors in the chosen backend
+        # Denoise sniffer channels per window before constructing the noise matrix.
         snf = xp.asarray(sniffer[:, pe_rng, :])
+        if denoise_sniffers:
+            snf = _denoise_sniffer_window(snf, denoise_rank=denoise_rank, xp=xp)
+
+        # Build noise matrix and input vectors in the chosen backend
         noise_mat = get_noise_mtx(snf, dk, xp=xp)
 
         init_mat_sub = xp.reshape(xp.asarray(signal_in[:, pe_rng]), (Ncol * len(pe_rng), 1))
@@ -168,14 +200,30 @@ def _est_emi_impl(signal_in, sniffer, line_grps, dk, w, xp, to_numpy):
 
     return to_numpy(emi_hat), kern
 
-def est_emi(signal_in: npt.NDArray[np.complex64], sniffer: npt.NDArray[np.complex64], line_grps: list[npt.NDArray], dk: list[int], w: npt.NDArray[np.float32]):
-    return _est_emi_impl(signal_in, sniffer, line_grps, dk, w, np, lambda x: x)
+def est_emi(
+    signal_in: npt.NDArray[np.complex64],
+    sniffer: npt.NDArray[np.complex64],
+    line_grps: list[npt.NDArray],
+    dk: list[int],
+    w: npt.NDArray[np.float32],
+    denoise_sniffers: bool = False,
+    denoise_rank: int = 1,
+):
+    return _est_emi_impl(signal_in, sniffer, line_grps, dk, w, denoise_sniffers, denoise_rank, np, lambda x: x)
 
-def est_emi_gpu(signal_in: npt.NDArray[np.complex64], sniffer: npt.NDArray[np.complex64], line_grps: list[npt.NDArray], dk: list[int], w: npt.NDArray[np.float32]):
+def est_emi_gpu(
+    signal_in: npt.NDArray[np.complex64],
+    sniffer: npt.NDArray[np.complex64],
+    line_grps: list[npt.NDArray],
+    dk: list[int],
+    w: npt.NDArray[np.float32],
+    denoise_sniffers: bool = False,
+    denoise_rank: int = 1,
+):
     if cp is None:
         warn('CuPy is unavailable; falling back to the CPU EDITER path.')
-        return est_emi(signal_in, sniffer, line_grps, dk, w)
-    return _est_emi_impl(signal_in, sniffer, line_grps, dk, w, cp, _to_numpy)
+        return est_emi(signal_in, sniffer, line_grps, dk, w, denoise_sniffers, denoise_rank)
+    return _est_emi_impl(signal_in, sniffer, line_grps, dk, w, denoise_sniffers, denoise_rank, cp, _to_numpy)
 
 def apply_editer(signal_in: npt.NDArray[np.complex64], sniffer: npt.NDArray[np.complex64], params, w) -> tuple[npt.NDArray[np.complex64], npt.NDArray[np.complex64]]:
     max_lines = params['max_lines_per_group']
@@ -188,14 +236,17 @@ def apply_editer(signal_in: npt.NDArray[np.complex64], sniffer: npt.NDArray[np.c
             line_grps.append(np.arange(((grp_i)*max_lines), min(max_lines*(grp_i+1), nlin)))
 
 
+    denoise_sniffers = bool(params.get('denoise_sniffers', False))
+    denoise_rank = int(params.get('denoise_rank', 1))
+
     if params['gpu'] == -1 or not _cupy_ready():
-        emi_hat, kernels = est_emi(signal_in, sniffer, line_grps, params['dk'], w)
+        emi_hat, kernels = est_emi(signal_in, sniffer, line_grps, params['dk'], w, denoise_sniffers, denoise_rank)
     else:
         try:
             with cp.cuda.Device(params['gpu']):
-                emi_hat, kernels = est_emi_gpu(signal_in, sniffer, line_grps, params['dk'], w)
+                emi_hat, kernels = est_emi_gpu(signal_in, sniffer, line_grps, params['dk'], w, denoise_sniffers, denoise_rank)
         except Exception as exc:
             warn(f'CuPy/CUDA EDITER execution failed; falling back to CPU. ({exc!r})')
-            emi_hat, kernels = est_emi(signal_in, sniffer, line_grps, params['dk'], w)
+            emi_hat, kernels = est_emi(signal_in, sniffer, line_grps, params['dk'], w, denoise_sniffers, denoise_rank)
     return emi_hat, kernels
     

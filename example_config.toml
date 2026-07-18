@@ -18,6 +18,7 @@ gpu_device          = 1     # GPU device to use for EDITER, -1 for CPU.
 # Note: If the configured GPU is unavailable or CuPy is not installed,
 # the EDITER implementation will automatically fall back to the CPU path.
 interference_freq   = 24e6  # Frequency of the interference signal, to be used in autosniffer_select.
+denoise_rank        = 1     # Number of singular components to keep for per-window sniffer denoising.
 
 [pilottone]
 pt_freq = 24e6

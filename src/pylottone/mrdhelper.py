@@ -20,8 +20,6 @@ try:
 except ImportError:
     ismrmrd = None
 
-logging.basicConfig(level=logging.INFO)
-
 
 def _require_ismrmrd() -> None:
     if ismrmrd is None:

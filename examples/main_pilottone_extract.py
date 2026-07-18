@@ -27,9 +27,6 @@ except ImportError:
 from pylottone.trajectory import remove_readout_os
 from pylottone.triggering import extract_triggers, pt_ecg_jitter
 
-# TODO: 
-# 1. Switch to new extraction method.
-# 2. Fix ext1 trigs having multiple trigger per trigger.
 
 # %%
 # Read the data in

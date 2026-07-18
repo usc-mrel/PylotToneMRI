@@ -81,7 +81,7 @@ Most scripts also accepts list of inputs to be processed as a list of filepaths 
 
 `respiratory_from_image.py`: From reconstructed images in MRD format, asks the user to place a line plot, which is then used for estimating respiratory waveform from the reconstructed images.
 
-`remove_waveform.py`: Removes the waveforms with given ID from an MRD raw data. Can also repack the data to reclaim space.
+`remove_waveform.py`: Removes the waveforms with given ID from one or more MRD raw data files. You can pass files on the command line, including glob patterns, or select multiple files in the UI. It can also repack the data to reclaim space.
 
 `truncate_acquisitions.py`: Truncates the raw data to shorten the acquisiton time.
 
