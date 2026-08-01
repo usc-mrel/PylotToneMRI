@@ -16,12 +16,31 @@ _PT_EXPORTS = (
     "pick_source_bypeak",
 )
 
-__all__ = [*_PT_EXPORTS, "main"]
+_SELFNAV_EXPORTS = (
+    "extract_selfnav_navs",
+)
+
+_TRIGGERING_EXPORTS = (
+    "repair_cardiac_triggers_rr",
+    "repair_ecg_triggers_with_pt",
+)
+
+__all__ = [*_PT_EXPORTS, *_SELFNAV_EXPORTS, *_TRIGGERING_EXPORTS, "main"]
 
 
 def __getattr__(name: str):
     if name in _PT_EXPORTS:
         module = import_module(".pt", __name__)
+        value = getattr(module, name)
+        globals()[name] = value
+        return value
+    if name in _SELFNAV_EXPORTS:
+        module = import_module(".selfnav", __name__)
+        value = getattr(module, name)
+        globals()[name] = value
+        return value
+    if name in _TRIGGERING_EXPORTS:
+        module = import_module(".triggering", __name__)
         value = getattr(module, name)
         globals()[name] = value
         return value

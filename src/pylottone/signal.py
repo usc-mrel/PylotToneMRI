@@ -8,6 +8,7 @@ import numpy.typing as npt
 import pyfftw
 import scipy as sp
 from numpy.fft import fft, fftn, fftshift, ifft, ifftn, ifftshift
+from numpy.polynomial import Polynomial
 from scipy.signal.windows import tukey
 from scipy.signal import firwin, convolve
 from scipy.linalg import eigh
@@ -283,36 +284,29 @@ def firwin_filt(signal_in: np.ndarray, Fstart: float, Fstop: float, f_samp: floa
 
 def angle_dependant_filtering(sig: npt.NDArray[np.float64], n_unique_angles: int, angle_step:float=222.4922, pdegree:int=9) -> npt.NDArray[np.float64]:
     n_acq, nc = sig.shape[0:2]
-    nrep = n_acq//n_unique_angles 
     angs = np.arange(n_unique_angles)*angle_step % 360
     angs_sorted = np.sort(angs)
-    angles = np.tile(angs, (nrep,))
+    sort_idx = np.argsort(angs)
+    angle_idx = np.arange(n_acq) % n_unique_angles
+    angles = angs[angle_idx]
     I_angles = np.argsort(angles)
     Irev = np.argsort(I_angles)
-    # plt.figure()
-    # plt.plot(angles[I], sig[I, 4], '.')
-    # plt.show()
-    pt_sig_mean = np.mean(sig[I_angles,:].reshape((n_unique_angles, nrep, nc)), axis=1)
 
-    # plt.figure()
-    # plt.plot(pt_sig_mean, '.')
-    # plt.show()
+    counts = np.bincount(angle_idx, minlength=n_unique_angles).astype(np.float64)
+    valid = counts > 0
+    sig_mean_over_reps = np.full((n_unique_angles, nc), np.nan, dtype=np.float64)
+    for chi in range(nc):
+        sums = np.bincount(angle_idx, weights=sig[:, chi], minlength=n_unique_angles).astype(np.float64)
+        sig_mean_over_reps[valid, chi] = sums[valid] / counts[valid]
+    sig_mean_over_reps = sig_mean_over_reps[sort_idx]
 
-    from numpy.polynomial import Polynomial
     sig_filtered = np.zeros(sig.shape)
     for chi in range(nc):
-        p = Polynomial.fit(angs_sorted, pt_sig_mean[:,chi], deg=pdegree)
-        # xx, yy = p.linspace()
-        # plt.figure()
-        # plt.plot(np.sort(angs), pt_sig_mean[:,0], '.')
-        # plt.plot(np.sort(angs), p(np.sort(angs)), '-')
-        # plt.show()
-
+        x = angs_sorted[valid[sort_idx]]
+        y = sig_mean_over_reps[valid[sort_idx], chi]
+        p = Polynomial.fit(x, y, deg=min(pdegree, len(x) - 1))
         sig_filtered[:,chi] = (sig[I_angles, chi] - p(angles[I_angles]))[Irev]
 
-
-    # plt.figure()
-    # plt.plot(p(angles[I])[Irev], '*')
     return sig_filtered
 
 def xcorr_channels(measurements: np.ndarray, reference_channel: int = 0):

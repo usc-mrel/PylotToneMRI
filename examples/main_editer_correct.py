@@ -134,6 +134,7 @@ def main(ismrmrd_data_fullpath, cfg) -> str:
 
     coil_name = np.asarray(coil_name)
 
+    logging.info(f"Coil names: {coil_name}")
 
     f0 = hdr.experimentalConditions.H1resonanceFrequency_Hz
 

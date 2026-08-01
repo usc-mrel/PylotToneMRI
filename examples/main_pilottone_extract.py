@@ -1,7 +1,10 @@
 # %%
 import argparse
 import ctypes
+import io
 import os
+import sys
+from contextlib import redirect_stdout
 from pathlib import Path
 from typing import Union
 
@@ -31,7 +34,47 @@ from pylottone.triggering import extract_triggers, pt_ecg_jitter
 # %%
 # Read the data in
 
+
+class _StdoutTee(io.TextIOBase):
+    def __init__(self, *streams):
+        self.streams = streams
+
+    def write(self, s):
+        for stream in self.streams:
+            stream.write(s)
+        return len(s)
+
+    def flush(self):
+        for stream in self.streams:
+            stream.flush()
+
+
+def _build_debug_output_dir(raw_input_fullpath: Union[str, Path]) -> Path:
+    raw_input_fullpath = Path(raw_input_fullpath)
+    return raw_input_fullpath.parent.parent / 'pt_proc' / raw_input_fullpath.stem
+
+
+def _save_figure(fig, output_dir: Path, stem: str) -> None:
+    fig.savefig(output_dir / f'{stem}.png', dpi=200, bbox_inches='tight')
+    fig.savefig(output_dir / f'{stem}.svg', bbox_inches='tight')
+
+
+def _save_respiratory_plot(output_dir: Path, time_pt, pt_respiratory, time_resp=None, resp_waveform=None) -> None:
+    fig, ax = plt.subplots(1, 1, figsize=(10, 4))
+    ax.plot(time_pt, pt_respiratory, label='PT respiratory')
+    if time_resp is not None and resp_waveform is not None:
+        ax.plot(time_resp, resp_waveform, label='Scanner respiratory')
+    ax.set_title('Respiratory Waveforms')
+    ax.set_xlabel('Time [s]')
+    ax.legend()
+    _save_figure(fig, output_dir, 'respiratory_waveforms')
+    plt.close(fig)
+
 def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
+    debug_output_dir = _build_debug_output_dir(ismrmrd_data_fullpath)
+    debug_output_dir.mkdir(parents=True, exist_ok=True)
+    debug_log_path = debug_output_dir / 'debug_summary.txt'
+
     f_pt = cfg['pilottone']['pt_freq']
     remove_os = cfg['saving']['remove_os']
 
@@ -104,7 +147,7 @@ def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
     else:
         print('No Pulse Oximeter waveform found.')
     if 'ext1' in wf_dict:
-        time_ext1 = wf_dict['ext1'][0] - acq_list[0].acquisition_time_stamp*2.5e-3 - 0.35
+        time_ext1 = wf_dict['ext1'][0] - acq_list[0].acquisition_time_stamp*2.5e-3
         ext1_waveform = wf_dict['ext1'][1][:,0]
         ext1_trigs = wf_dict['ext1'][1][:,-1]
         ext1_exists = True
@@ -178,30 +221,47 @@ def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
     pt_cardiac_trigs = extract_triggers(time_pt, pt_cardiac, skip_time=0.5, prominence=0.4, max_hr=160)
     pt_derivative_trigs = extract_triggers(time_pt, pt_cardiac_derivative, skip_time=0.5, prominence=0.5, max_hr=160)
 
-    if ecg_exists:
-        _,_ = pt_ecg_jitter(time_pt, pt_cardiac, pt_cardiac_derivative,
-                            time_ecg, ecg_waveform, 
-                            pt_cardiac_trigs=pt_cardiac_trigs, pt_derivative_trigs=pt_derivative_trigs, ecg_trigs=ecg_trigs, 
-                            skip_time=1, show_outputs=cfg['pilottone']['show_outputs'])
-    elif ext1_exists:
-        _,_ = pt_ecg_jitter(time_pt, pt_cardiac, pt_cardiac_derivative,
-                            time_ext1, ext1_waveform, 
-                            pt_cardiac_trigs=pt_cardiac_trigs, pt_derivative_trigs=pt_derivative_trigs, ecg_trigs=ext1_trigs, 
-                            skip_time=1, show_outputs=cfg['pilottone']['show_outputs'])
-    elif cfg['pilottone']['show_outputs']:
-        fig, axs = plt.subplots(2,1, figsize=(10, 6), sharex=True)
-        axs[0].plot(time_pt, pt_cardiac, label='Cardiac')
-        axs[0].plot(time_pt, pt_cardiac_derivative, label='Cardiac Derivative')
-        axs[0].plot(time_pt[pt_cardiac_trigs==1], pt_cardiac[pt_cardiac_trigs==1], '*', label='Cardiac Triggers')
-        axs[0].plot(time_pt[pt_derivative_trigs==1], pt_cardiac_derivative[pt_derivative_trigs==1], '*', label='Cardiac Derivative Triggers')
-        axs[0].set_title('Cardiac Triggers')
-        axs[0].set_xlabel('Time [s]')
-        axs[0].legend()
-        axs[1].plot(time_pt, pt_respiratory, label='Respiratory')
-        axs[1].set_title('Respiratory')
-        axs[1].set_xlabel('Time [s]')
-        axs[1].legend()
-        plt.show()
+    with debug_log_path.open('w', encoding='utf-8') as debug_log, redirect_stdout(_StdoutTee(sys.stdout, debug_log)):
+        print(f'Debug output directory: {debug_output_dir}')
+        if ecg_exists:
+            _, _ = pt_ecg_jitter(time_pt, pt_cardiac, pt_cardiac_derivative,
+                                 time_ecg, ecg_waveform,
+                                 pt_cardiac_trigs=pt_cardiac_trigs, pt_derivative_trigs=pt_derivative_trigs, ecg_trigs=ecg_trigs,
+                                 skip_time=1, show_outputs=cfg['pilottone']['show_outputs'], debug_output_dir=debug_output_dir)
+        elif ext1_exists:
+            _, _ = pt_ecg_jitter(time_pt, pt_cardiac, pt_cardiac_derivative,
+                                 time_ext1, ext1_waveform,
+                                 pt_cardiac_trigs=pt_cardiac_trigs, pt_derivative_trigs=pt_derivative_trigs, ecg_trigs=ext1_trigs,
+                                 skip_time=1, show_outputs=cfg['pilottone']['show_outputs'], debug_output_dir=debug_output_dir)
+        else:
+            print('No ECG or external trigger waveform found. Saving PT-only debug plots.')
+            print(f'Number of PT triggers: {np.count_nonzero(pt_cardiac_trigs)}.')
+            print(f'Number of derivative PT triggers: {np.count_nonzero(pt_derivative_trigs)}.')
+
+            fig, axs = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
+            axs[0].plot(time_pt, pt_cardiac, label='Cardiac')
+            axs[0].plot(time_pt, pt_cardiac_derivative, label='Cardiac Derivative')
+            axs[0].plot(time_pt[pt_cardiac_trigs == 1], pt_cardiac[pt_cardiac_trigs == 1], '*', label='Cardiac Triggers')
+            axs[0].plot(time_pt[pt_derivative_trigs == 1], pt_cardiac_derivative[pt_derivative_trigs == 1], '*', label='Cardiac Derivative Triggers')
+            axs[0].set_title('Cardiac Triggers')
+            axs[0].set_xlabel('Time [s]')
+            axs[0].legend()
+            axs[1].plot(time_pt, pt_respiratory, label='Respiratory')
+            axs[1].set_title('Respiratory')
+            axs[1].set_xlabel('Time [s]')
+            axs[1].legend()
+            _save_figure(fig, debug_output_dir, 'pt_trigger_debug')
+            if cfg['pilottone']['show_outputs']:
+                plt.show()
+            plt.close(fig)
+
+    _save_respiratory_plot(
+        debug_output_dir,
+        time_pt,
+        pt_respiratory,
+        time_resp if 'time_resp' in locals() else None,
+        resp_waveform if 'resp_waveform' in locals() else None,
+    )
 
 
     # %% [markdown]

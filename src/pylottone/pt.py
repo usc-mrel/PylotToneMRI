@@ -258,7 +258,7 @@ def extract_pilottone_navs(pt_sig, f_samp: float, params: dict):
 
     logger.info(f"Picked respiratory source indices: {r_idx2}, stds: {r_stds2}")
     logger.info(f"Picked cardiac source indices: {c_idx2}, stds: {c_stds2}")
-    pt_cardiac = filtfilt(h_cardiac, [1], s_sobi[c_idx2[0], :], axis=0, method="gust", irlen=firlen_cardiac)
+    pt_cardiac = filtfilt(h_cardiac, [1], s_sobi[c_idx2[np.argmin(c_stds2)], :], axis=0, method="gust", irlen=firlen_cardiac)
     pt_respiratory = filtfilt(h_respiratory, [1], s_sobi[r_idx2[0], :], axis=0, method="gust", irlen=firlen_respiratory)
 
     # Check and correct for the sign
