@@ -181,6 +181,8 @@ def main(ismrmrd_data_fullpath, cfg) -> Union[str, None]:
     f_samp = 1/samp_time_pt # [Hz]
 
     pt_extract_params = {'num_lags': 375,
+                        'source_selection_method': cfg['pilottone'].get('source_selection_method', 'spectral'),
+                        'model_source_selection': cfg['pilottone'].get('model_source_selection', {}),
                         'respiratory': {
                                 'freq_start': cfg['pilottone']['respiratory']['freq_start'],
                                 'freq_stop': cfg['pilottone']['respiratory']['freq_stop'],

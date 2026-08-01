@@ -14,6 +14,8 @@ _PT_EXPORTS = (
     "process_cplx_pt",
     "pick_cardiac_source",
     "pick_source_bypeak",
+    "pick_navigators_from_sources",
+    "pred_scan",
 )
 
 _SELFNAV_EXPORTS = (
@@ -30,7 +32,8 @@ __all__ = [*_PT_EXPORTS, *_SELFNAV_EXPORTS, *_TRIGGERING_EXPORTS, "main"]
 
 def __getattr__(name: str):
     if name in _PT_EXPORTS:
-        module = import_module(".pt", __name__)
+        module_name = ".model_selection" if name in {"pick_navigators_from_sources", "pred_scan"} else ".pt"
+        module = import_module(module_name, __name__)
         value = getattr(module, name)
         globals()[name] = value
         return value

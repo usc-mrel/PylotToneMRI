@@ -29,6 +29,9 @@ if TYPE_CHECKING:
     import ismrmrd
 
 
+SourceSelectionMethod = Literal["spectral", "model"]
+
+
 def est_dtft(t, data, deltaf, window):
     ''' est_dtft MMSE sine amplitude estimate by DTFT sum given freq deltaf.
     Also subtracts the estimated windowed sine from the data.
@@ -227,6 +230,60 @@ def check_waveform_polarity(waveform: npt.NDArray[np.float64], prominence: float
 
     return wf_sign
 
+def _pick_navigator_sources(
+    sources: np.ndarray,
+    f_samp: float,
+    params: dict,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray | None]:
+    selection_method: SourceSelectionMethod = params.get("source_selection_method", "spectral")
+
+    if selection_method == "spectral":
+        r_idx, r_stds = pick_source_bypeak(
+            sources.T,
+            f_samp,
+            fmask_low=params["respiratory"].get("source_freq_start", 0.2),
+            fmask_high=params["respiratory"].get("source_freq_stop", 0.6),
+            threshold=params["respiratory"].get("source_threshold", 0.9),
+        )
+        c_idx, c_stds = pick_source_bypeak(
+            sources.T,
+            f_samp,
+            fmask_low=params["cardiac"].get("source_freq_start", 0.66),
+            fmask_high=params["cardiac"].get("source_freq_stop", 3.0),
+            threshold=params["cardiac"].get("source_threshold", 0.9),
+        )
+        c_idx = np.array([c_idx[np.argmin(c_stds)]])
+        return r_idx, c_idx, None
+
+    if selection_method == "model":
+        from importlib.resources import as_file, files
+
+        from .model_selection import pick_navigators_from_sources
+
+        model_params = params.get("model_source_selection", {})
+        time_pt = np.arange(sources.shape[1]) / f_samp
+        classifier_path = model_params.get("classifier_path")
+        if classifier_path is None:
+            classifier_resource = files("pylottone.resources").joinpath("rocket_pipeline.pkl")
+            with as_file(classifier_resource) as classifier_path:
+                r_idx, c_idx, confs = pick_navigators_from_sources(
+                    sources,
+                    time_pt,
+                    classifier_path=classifier_path,
+                    force_navpred=model_params.get("force_navpred", True),
+                )
+        else:
+            r_idx, c_idx, confs = pick_navigators_from_sources(
+                sources,
+                time_pt,
+                classifier_path=classifier_path,
+                force_navpred=model_params.get("force_navpred", True),
+            )
+        return r_idx, c_idx, confs
+
+    raise ValueError(f"Unknown source_selection_method {selection_method!r}. Expected 'spectral' or 'model'.")
+
+
 def extract_pilottone_navs(pt_sig, f_samp: float, params: dict):
     '''Extract the respiratory and cardiac pilot tone signals from the given PT signal.
     Parameters:
@@ -252,13 +309,18 @@ def extract_pilottone_navs(pt_sig, f_samp: float, params: dict):
 
     s_sobi, Asobi, Bsobi = sobi(pt_sig.T, num_lags=params['num_lags'])
 
-    # Detect which channels are cardiac and respiratory navigators.
-    r_idx2, r_stds2 = pick_source_bypeak(s_sobi.T, f_samp, fmask_low=0.2, fmask_high=0.6)
-    c_idx2, c_stds2 = pick_source_bypeak(s_sobi.T, f_samp)
+    r_idx2, c_idx2, source_confidences = _pick_navigator_sources(s_sobi, f_samp, params)
+    if len(r_idx2) == 0 or len(c_idx2) == 0:
+        raise RuntimeError(
+            f"Navigator source selection failed. Respiratory indices: {r_idx2}, cardiac indices: {c_idx2}."
+        )
 
-    logger.info(f"Picked respiratory source indices: {r_idx2}, stds: {r_stds2}")
-    logger.info(f"Picked cardiac source indices: {c_idx2}, stds: {c_stds2}")
-    pt_cardiac = filtfilt(h_cardiac, [1], s_sobi[c_idx2[np.argmin(c_stds2)], :], axis=0, method="gust", irlen=firlen_cardiac)
+    logger.info(f"Picked respiratory source indices: {r_idx2}")
+    logger.info(f"Picked cardiac source indices: {c_idx2}")
+    if source_confidences is not None:
+        logger.debug(f"Model source selection confidences: {source_confidences}")
+
+    pt_cardiac = filtfilt(h_cardiac, [1], s_sobi[c_idx2[0], :], axis=0, method="gust", irlen=firlen_cardiac)
     pt_respiratory = filtfilt(h_respiratory, [1], s_sobi[r_idx2[0], :], axis=0, method="gust", irlen=firlen_respiratory)
 
     # Check and correct for the sign

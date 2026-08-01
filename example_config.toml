@@ -27,6 +27,11 @@ discard_badcoils = true # Uses the same algorithm as autosniffer_select to disca
 sensing_coils       = [15, 16, 17] # Coils to use for sensing.
 show_outputs    = false # Whether or not to show the outputs of the pilottone extraction.
 golay_filter_len = 81 # Golay filter length for initial denoising.
+source_selection_method = "spectral" # "spectral" or "model" for SOBI navigator source selection.
+
+[pilottone.model_source_selection]
+force_navpred = true # Force one respiratory and one cardiac source when using model source selection.
+# classifier_path = "" # Optional path to a custom joblib-compatible navigator classifier.
 
 [pilottone.respiratory]
 freq_start          = 0.05 # [Hz] Lower frequency limit for respiratory bandpass filter
