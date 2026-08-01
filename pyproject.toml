@@ -1,6 +1,6 @@
 [project]
 name = "pylottone"
-version = "0.1.4"
+version = "0.2.0"
 description = "PylotToneMRI is a Python Toolbox with an emphasis on high-amplitude pilot tone applied to spiral MR imaging."
 readme = "README.md"
 authors = [
